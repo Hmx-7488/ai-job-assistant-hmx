@@ -5,7 +5,7 @@
         返回首页
       </button>
     </div>
-    <header class="page-header"> 
+    <header class="page-header" > 
       <h1>简历分析</h1>
       <p>上传简历并填写岗位信息，开始生成分析结果。</p>
     </header>
@@ -97,6 +97,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import {useRouter} from 'vue-router'
+import axios from "axios";
 
 const router = useRouter()
 
@@ -104,6 +105,7 @@ const fileInputRef = ref<HTMLInputElement | null>(null)
 const jobTitle = ref('')
 const companyName = ref('')
 const jdText = ref('')
+const isLoading = ref(false)
 
 const result = ref({
   score: '',
@@ -119,13 +121,54 @@ const hasResult = computed(() => {
 const goToHome = ()=>{
   router.push('/');
 }
-const handleAnalyze = () => {
+const handleAnalyze = async() => {
+// 校验
+if (!fileInputRef|| !fileInputRef.value || !fileInputRef.value.files) {
+  alert('请先上传简历')
+  return
+}
+
+const file = fileInputRef.value.files[0]
+
+//构建 FormData
+const formData = new FormData()
+formData.append('resume', file)
+
+ // 后续需要传岗位信息，也可以在这里 append
+ formData.append('jobTile', '前端开发')
+
+ isLoading.value = true
+
+ try {
+  // 发请求
+  const response = await axios.post('http://localhost:3000/api/resume/upload',formData,{
+    headers: {
+      'Content-Type': 'multipart/form-data'
+
+    }
+  })
+ console.log(response.data)
+
+ if (response.data.success) {
+  alert('上传成功！')
+
+  //用模拟数据代替
   result.value = {
     score: '72/100',
     strengths: ['具备 Vue3 + TypeScript 项目经验', '有后台系统开发与部署经历'],
     weaknesses: ['缺少 AI 项目经验', '后端闭环能力需要加强'],
     suggestions: ['补一个 AI 求职助手项目', '加强 Node.js 和接口设计能力'],
   }
+ }
+ else{
+  alert('上传失败！:'+ response.data.message)
+ }
+ } catch (error) {
+  console.log('连接后端失败，请检查后端服务是否启动！')
+ }finally{
+  isLoading.value = false
+ }
+  
 }
 
 const scoreColorClass = computed(() => {
