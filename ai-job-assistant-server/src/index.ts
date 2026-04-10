@@ -1,13 +1,13 @@
 import cors from 'cors';
 import express, { Request, Response } from 'express';
 import multer from 'multer';
-// express创建服务，用cors结解决前后端跨域问题
+import { PDFParse } from 'pdf-parse';
 
 // 创建服务
-const app = express()
+const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 
-// 配置 multer 存储引擎 (这里使用内存存储，方便后续处理；也可以配置磁盘存储)
+// 配置 multer 内存存储，用于处理上传文件
 const upload = multer({ storage: multer.memoryStorage() });
 
 app.use(cors());
@@ -23,27 +23,62 @@ app.get('/api/ping', (_req: Request, res: Response) => {
 
 app.get('/api/hello', (_req: Request, res: Response) => {
   res.json({
-    success:true,
+    success: true,
     message: 'Hello from server',
-  })
+  });
 });
 
-app.post('/api/resume/upload', upload.single('resume'), (req: Request, res: Response) => {
+app.post('/api/resume/upload', upload.single('resume'), async (req: Request, res: Response) => {
   if (!req.file) {
     return res.status(400).json({
       success: false,
       message: '没有接收到文件',
     });
   }
-  console.log('接收到文件:', req.file.originalname);
-  console.log('文件大小:', req.file.size);
-  console.log('其他表单数据:', req.body);
 
-  res.json({
-    success: true,
-    message: '文件上传成功',
-    file: req.file,
-  });
+  const MAX_SIZE = 10 * 1024 * 1024; // 10MB
+
+  if (req.file.size > MAX_SIZE) {
+    return res.status(400).json({
+      success: false,
+      message: '文件太大，请上传小于 10MB 的文件',
+    });
+  }
+
+  const fileBuffer = req.file.buffer;
+  const fileName = req.file.originalname.toLowerCase();
+
+  if (!fileName.endsWith('.pdf')) {
+    return res.status(400).json({
+      success: false,
+      message: '文件格式错误，请上传 PDF 格式的简历',
+    });
+  }
+
+  const parser = new PDFParse({ data: fileBuffer });
+
+  try {
+    const data = await parser.getText();
+    const text = data.text ?? '';
+
+    console.log('解析成功，文本内容:', text);
+
+    return res.json({
+      success: true,
+      message: '解析成功',
+      text,
+      fileName: req.file.originalname,
+    });
+  } catch (error) {
+    console.error('解析文件时出错:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: '解析文件时出错',
+    });
+  } finally {
+    await parser.destroy();
+  }
 });
 
 app.listen(PORT, () => {

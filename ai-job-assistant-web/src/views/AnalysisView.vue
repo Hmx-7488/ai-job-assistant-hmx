@@ -164,7 +164,7 @@ formData.append('resume', file)
   alert('上传失败！:'+ response.data.message)
  }
  } catch (error) {
-  console.log('连接后端失败，请检查后端服务是否启动！')
+  console.log('上传出错:', error)
  }finally{
   isLoading.value = false
  }
@@ -188,6 +188,7 @@ const handleClear = ()=> {
   if (fileInputRef.value) {
     fileInputRef.value.value = '';
   }
+  
   // 清空表单
   jobTitle.value = '';
   companyName.value = '';
