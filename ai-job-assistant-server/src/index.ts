@@ -2,6 +2,7 @@ import cors from 'cors';
 import express, { Request, Response } from 'express';
 import multer from 'multer';
 import { PDFParse } from 'pdf-parse';
+import jobRouter from './routes/job';
 
 // 创建服务
 const app = express();
@@ -12,6 +13,7 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 app.use(cors());
 app.use(express.json());
+app.use('/api/job', jobRouter);
 
 app.get('/api/ping', (_req: Request, res: Response) => {
   res.json({

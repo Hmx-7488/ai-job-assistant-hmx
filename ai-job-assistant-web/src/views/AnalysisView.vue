@@ -106,6 +106,7 @@ const jobTitle = ref('')
 const companyName = ref('')
 const jdText = ref('')
 const isLoading = ref(false)
+const JobId = ref<string | null>(null)
 
 const result = ref({
   score: '',
@@ -123,47 +124,78 @@ const goToHome = ()=>{
 }
 const handleAnalyze = async() => {
 // 校验
-if (!fileInputRef|| !fileInputRef.value || !fileInputRef.value.files) {
+if (!fileInputRef.value?.files || fileInputRef.value.files.length === 0) {
   alert('请先上传简历')
+  return
+}else if (!jobTitle.value || !jdText.value) {
+  alert('请填写岗位名称和岗位 JD')
   return
 }
 
-const file = fileInputRef.value.files[0]
+const file = fileInputRef.value?.files[0]
+if (!file) {
+  alert('没有选择文件！')
+  return
+}
 
-//构建 FormData
+ isLoading.value = true
+ JobId.value = null
+
+ try {
+  const jobResponse = await axios.post('http://localhost:3000/api/job/create', {
+      jobTitle: jobTitle.value,
+      companyName: companyName.value,
+      jd: jdText.value
+    })
+
+     if (!jobResponse.data.success) {
+      throw new Error(jobResponse.data.message || '创建岗位失败')
+    }
+
+  //构建 FormData
 const formData = new FormData()
 formData.append('resume', file)
 
- // 后续需要传岗位信息，也可以在这里 append
- formData.append('jobTile', '前端开发')
-
- isLoading.value = true
-
- try {
-  // 发请求
+ // 后续需要传岗位信息，在这里 append
+ formData.append('jobTitle', jobTitle.value)
+ formData.append('jdText', jdText.value)
+if (companyName.value) {
+  formData.append('companyName', companyName.value)
+ }
+JobId.value = jobResponse.data.data.jobId
+formData.append('jobId', JobId.value || '')
+  
+ // 发请求
   const response = await axios.post('http://localhost:3000/api/resume/upload',formData,{
     headers: {
-      'Content-Type': 'multipart/form-data'
-
-    }
+      'Content-Type': 'multipart/form-data'}
   })
  console.log(response.data)
 
  if (response.data.success) {
   alert('上传成功！')
 
-  //用模拟数据代替
-  result.value = {
-    score: '72/100',
-    strengths: ['具备 Vue3 + TypeScript 项目经验', '有后台系统开发与部署经历'],
-    weaknesses: ['缺少 AI 项目经验', '后端闭环能力需要加强'],
-    suggestions: ['补一个 AI 求职助手项目', '加强 Node.js 和接口设计能力'],
-  }
+  if (!response.data.success) {
+      throw new Error(response.data.message || '简历上传失败')
+    }
+
+    // 处理分析结果 
+    if (response.data.data) {
+       result.value = {
+          score: response.data.data.score || '72/100',
+          strengths: response.data.data.strengths || [],
+          weaknesses: response.data.data.weaknesses || [],
+          suggestions: response.data.data.suggestions || [],
+       }
+       alert('分析完成！')
+    } else {
+       // 后端是异步处理，这里提示用户“正在分析中...”
+       alert('上传成功，正在后台分析...')
+       console.log(JobId.value)
+       
+    }
  }
- else{
-  alert('上传失败！:'+ response.data.message)
- }
- } catch (error) {
+    }catch (error) {
   console.log('上传出错:', error)
  }finally{
   isLoading.value = false
