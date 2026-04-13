@@ -1,13 +1,12 @@
 <template>
   <div class="analysis-page">
     <div class="top-actions">
-      <button class="back-btn" @click="goToHome" >
-        返回首页
-      </button>
+      <button class="back-btn" @click="goToHome">返回首页</button>
     </div>
-    <header class="page-header" > 
+
+    <header class="page-header">
       <h1>简历分析</h1>
-      <p>上传简历并填写岗位信息，开始生成分析结果。</p>
+      <p>填写岗位信息后，点击开始分析获取匹配结果。</p>
     </header>
 
     <div class="content">
@@ -32,20 +31,14 @@
 
           <div class="form-item">
             <label>岗位 JD</label>
-            <textarea
-              v-model="jdText"
-              rows="10"
-              placeholder="请粘贴岗位描述"
-            />
+            <textarea v-model="jdText" rows="10" placeholder="请粘贴岗位 JD" />
           </div>
 
           <div class="bottom-btn">
-            <button class="primary-btn" @click="handleAnalyze">
-            开始分析
-          </button>
-          <button class="clear-btn" @click="handleClear">
-            清空
-          </button>
+            <button class="primary-btn" :disabled="status === 'loading'" @click="handleAnalyze">
+              {{ status === 'loading' ? '分析中...' : '开始分析' }}
+            </button>
+            <button class="clear-btn" :disabled="status === 'loading'" @click="handleClear">清空</button>
           </div>
         </div>
       </section>
@@ -54,37 +47,38 @@
         <div class="card">
           <h2>分析结果</h2>
 
-          <div v-if="!hasResult" class="empty-box">
-            暂无分析结果，请先上传简历并填写岗位信息。
+          <div v-if="status === 'idle'" class="empty-box">
+            暂无分析结果，请先填写岗位信息并点击开始分析。
           </div>
 
-          <div v-else class="result-box">
-            <p><strong>匹配度：</strong><span :class="scoreColorClass">{{ result.score }}</span></p>
+          <div v-else-if="status === 'loading'" class="state loading">分析中，请稍候...</div>
 
-            <div class="result-section">
+          <div v-else-if="status === 'error'" class="state error">{{ errorMessage }}</div>
+
+          <div v-else-if="result" class="result-grid">
+            <div class="result-card score-card">
+              <h3>匹配度</h3>
+              <p class="score" :class="scoreColorClass">{{ result.score }}/100</p>
+            </div>
+
+            <div class="result-card">
               <h3>优势项</h3>
               <ul>
-                <li v-for="(item, index) in result.strengths" :key="index">
-                  {{ item }}
-                </li>
+                <li v-for="(item, index) in result.strengths" :key="`s-${index}`">{{ item }}</li>
               </ul>
             </div>
 
-            <div class="result-section">
-              <h3>待补强项</h3>
+            <div class="result-card">
+              <h3>待提升项</h3>
               <ul>
-                <li v-for="(item, index) in result.weaknesses" :key="index">
-                  {{ item }}
-                </li>
+                <li v-for="(item, index) in result.weaknesses" :key="`w-${index}`">{{ item }}</li>
               </ul>
             </div>
 
-            <div class="result-section">
+            <div class="result-card">
               <h3>优化建议</h3>
               <ul>
-                <li v-for="(item, index) in result.suggestions" :key="index">
-                  {{ item }}
-                </li>
+                <li v-for="(item, index) in result.suggestions" :key="`g-${index}`">{{ item }}</li>
               </ul>
             </div>
           </div>
@@ -95,146 +89,121 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import {useRouter} from 'vue-router'
-import axios from "axios";
+import axios from 'axios';
+import { computed, ref } from 'vue';
+import { useRouter } from 'vue-router';
 
-const router = useRouter()
+type AnalyzeStatus = 'idle' | 'loading' | 'success' | 'error';
 
-const fileInputRef = ref<HTMLInputElement | null>(null)
-const jobTitle = ref('')
-const companyName = ref('')
-const jdText = ref('')
-const isLoading = ref(false)
-const JobId = ref<string | null>(null)
-
-const result = ref({
-  score: '',
-  strengths: [] as string[],
-  weaknesses: [] as string[],
-  suggestions: [] as string[],
-})
-
-const hasResult = computed(() => {
-  return result.value.score !== ''
-})
-
-const goToHome = ()=>{
-  router.push('/');
-}
-const handleAnalyze = async() => {
-// 校验
-if (!fileInputRef.value?.files || fileInputRef.value.files.length === 0) {
-  alert('请先上传简历')
-  return
-}else if (!jobTitle.value || !jdText.value) {
-  alert('请填写岗位名称和岗位 JD')
-  return
+interface AnalysisResult {
+  score: number;
+  strengths: string[];
+  weaknesses: string[];
+  suggestions: string[];
 }
 
-const file = fileInputRef.value?.files[0]
-if (!file) {
-  alert('没有选择文件！')
-  return
-}
+const router = useRouter();
 
- isLoading.value = true
- JobId.value = null
+const fileInputRef = ref<HTMLInputElement | null>(null);
+const jobTitle = ref('');
+const companyName = ref('');
+const jdText = ref('');
+const jobId = ref<string | null>(null);
 
- try {
-  const jobResponse = await axios.post('http://localhost:3000/api/job/create', {
-      jobTitle: jobTitle.value,
-      companyName: companyName.value,
-      jd: jdText.value
-    })
-
-     if (!jobResponse.data.success) {
-      throw new Error(jobResponse.data.message || '创建岗位失败')
-    }
-
-  //构建 FormData
-const formData = new FormData()
-formData.append('resume', file)
-
- // 后续需要传岗位信息，在这里 append
- formData.append('jobTitle', jobTitle.value)
- formData.append('jdText', jdText.value)
-if (companyName.value) {
-  formData.append('companyName', companyName.value)
- }
-JobId.value = jobResponse.data.data.jobId
-formData.append('jobId', JobId.value || '')
-  
- // 发请求
-  const response = await axios.post('http://localhost:3000/api/resume/upload',formData,{
-    headers: {
-      'Content-Type': 'multipart/form-data'}
-  })
- console.log(response.data)
-
- if (response.data.success) {
-  alert('上传成功！')
-
-  if (!response.data.success) {
-      throw new Error(response.data.message || '简历上传失败')
-    }
-
-    // 处理分析结果 
-    if (response.data.data) {
-       result.value = {
-          score: response.data.data.score || '72/100',
-          strengths: response.data.data.strengths || [],
-          weaknesses: response.data.data.weaknesses || [],
-          suggestions: response.data.data.suggestions || [],
-       }
-       alert('分析完成！')
-    } else {
-       // 后端是异步处理，这里提示用户“正在分析中...”
-       alert('上传成功，正在后台分析...')
-       console.log(JobId.value)
-       
-    }
- }
-    }catch (error) {
-  console.log('上传出错:', error)
- }finally{
-  isLoading.value = false
- }
-  
-}
+const status = ref<AnalyzeStatus>('idle');
+const errorMessage = ref('');
+const result = ref<AnalysisResult | null>(null);
 
 const scoreColorClass = computed(() => {
-  if (!hasResult.value) return ''
-  
-  // 提取分数中的数字，例如 "72/100" -> 72
-  const match = result.value.score.match(/(\d+)/)
-  const scoreNum = match ? parseInt(match[1], 10) : 0
+  const scoreNum = result.value?.score ?? 0;
+  if (scoreNum >= 80) return 'score-high';
+  if (scoreNum >= 60) return 'score-medium';
+  return 'score-low';
+});
 
-  if (scoreNum >= 80) return 'score-high'   // 高分：绿色
-  if (scoreNum >= 60) return 'score-medium' // 中等：橙色
-  return 'score-low'                        // 低分：红色
-})
+const goToHome = () => {
+  router.push('/');
+};
 
-const handleClear = ()=> {
-  // 清空文件
+const handleAnalyze = async () => {
+  const file = fileInputRef.value?.files?.[0];
+  if (!file) {
+    alert('请先上传简历');
+    return;
+  }
+
+  if (!jobTitle.value.trim() || !jdText.value.trim()) {
+    alert('岗位名称和 JD 不能为空');
+    return;
+  }
+
+  status.value = 'loading';
+  errorMessage.value = '';
+  result.value = null;
+
+  try {
+    const formData = new FormData();
+    formData.append('resume', file);
+
+    const uploadResponse = await axios.post('http://localhost:3000/api/resume/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+
+    if (!uploadResponse.data?.success) {
+      throw new Error(uploadResponse.data?.message || '简历上传失败');
+    }
+
+    const jobResponse = await axios.post('http://localhost:3000/api/job/create', {
+      jobTitle: jobTitle.value.trim(),
+      companyName: companyName.value.trim(),
+      jd: jdText.value.trim(),
+      
+    });
+
+    if (!jobResponse.data?.success) {
+      throw new Error(jobResponse.data?.message || '创建岗位失败');
+    }
+
+    jobId.value = jobResponse.data?.data?.jobId ?? null;
+    console.log('jobId', jobId.value);
+    if (!jobId.value) {
+      throw new Error('后端未返回 jobId');
+    }
+
+    const analysisResponse = await axios.post('http://localhost:3000/api/analysis/run', {
+      jobId: jobId.value,
+      // 可选的额外参数，方便后端记录日志或做进一步分析
+      jobTitle: jobTitle.value.trim(),
+      companyName: companyName.value.trim(),
+      jdText: jdText.value.trim(),
+    });
+
+    if (!analysisResponse.data?.success) {
+      throw new Error(analysisResponse.data?.message || '分析失败');
+    }
+
+    result.value = analysisResponse.data.data as AnalysisResult;
+    status.value = 'success';
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : '分析失败，请稍后重试';
+    status.value = 'error';
+    errorMessage.value = message;
+    console.error('分析流程失败:', error);
+  }
+};
+
+const handleClear = () => {
   if (fileInputRef.value) {
     fileInputRef.value.value = '';
   }
-  
-  // 清空表单
   jobTitle.value = '';
   companyName.value = '';
   jdText.value = '';
-
-  result.value = {
-    score: '',
-    strengths: [],
-    weaknesses: [],
-    suggestions: [],
-
-  }
-}
-
+  jobId.value = null;
+  result.value = null;
+  errorMessage.value = '';
+  status.value = 'idle';
+};
 </script>
 
 <style scoped>
@@ -243,6 +212,7 @@ const handleClear = ()=> {
   justify-content: start;
   margin-bottom: 16px;
 }
+
 .back-btn {
   padding: 6px 12px;
   border: none;
@@ -251,6 +221,7 @@ const handleClear = ()=> {
   color: #fff;
   cursor: pointer;
 }
+
 .analysis-page {
   max-width: 1200px;
   margin: 0 auto;
@@ -262,7 +233,7 @@ const handleClear = ()=> {
 }
 
 .page-header h1 {
-  margin-bottom: 18px;
+  margin-bottom: 48px;
 }
 
 .page-header p {
@@ -280,7 +251,6 @@ const handleClear = ()=> {
   border-radius: 12px;
   padding: 20px;
   background: #fff;
-  margin-bottom: 20px;
 }
 
 .form-item {
@@ -304,64 +274,104 @@ const handleClear = ()=> {
 }
 
 .bottom-btn {
-display: flex;
-gap: 10px;
-justify-content: center;
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 8px;
 }
 
-.primary-btn {
-  padding: 12px 20px;
-  border: none;
-  border-radius: 10px;
-  background: #409eff;
-  color: #fff;
-  cursor: pointer;
-  font-size: 15px;
-}
-
+.primary-btn,
 .clear-btn {
   padding: 12px 20px;
   border: none;
   border-radius: 10px;
-  background: #676a6e;
   color: #fff;
   cursor: pointer;
   font-size: 15px;
 }
-.empty-box {
+
+.primary-btn {
+  background: #409eff;
+}
+
+.clear-btn {
+  background: #676a6e;
+}
+
+.primary-btn:disabled,
+.clear-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.empty-box,
+.state {
   padding: 24px;
   border-radius: 8px;
+}
+
+.empty-box {
   background: #f7f7f7;
   color: #888;
 }
 
-.result-box {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+.state.loading {
+  background: #ecf5ff;
+  color: #409eff;
 }
 
-/* 高分：绿色 */
+.state.error {
+  background: #fef0f0;
+  color: #f56c6c;
+}
+
+.result-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.result-card {
+  border: 1px solid #ebeef5;
+  border-radius: 10px;
+  padding: 14px;
+  background: #fafafa;
+}
+
+.result-card h3 {
+  margin: 0 0 8px;
+}
+
+.score-card {
+  background: #f5f7fa;
+}
+
+.score {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+}
+
 .score-high {
   color: #67c23a;
 }
 
-/* 中等：橙色/黄色 */
 .score-medium {
   color: #e6a23c;
 }
 
-/* 低分：红色 */
 .score-low {
   color: #f56c6c;
 }
 
-.result-section h3 {
-  margin-bottom: 8px;
+.result-card ul {
+  margin: 0;
+  padding-left: 18px;
 }
 
-.result-section ul {
-  padding-left: 18px;
-  margin: 0;
+@media (max-width: 900px) {
+  .content {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

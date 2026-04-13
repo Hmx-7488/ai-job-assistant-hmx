@@ -21,3 +21,8 @@ pnpm-debug.log*
 # OS files
 .DS_Store
 Thumbs.db
+
+# Screenshot capture temp/browser profile data
+docs/screenshots/edge-profile/
+docs/screenshots/chrome-profile/
+docs/screenshots/browser-profile/
