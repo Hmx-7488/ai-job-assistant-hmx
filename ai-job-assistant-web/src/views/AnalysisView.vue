@@ -152,6 +152,10 @@ const handleAnalyze = async () => {
     if (!uploadResponse.data?.success) {
       throw new Error(uploadResponse.data?.message || '简历上传失败');
     }
+    // console.log('简历上传成功:', uploadResponse.data.text);
+    
+    // 获取解析后的简历文本
+    const resumeText = uploadResponse.data.text;
 
     const jobResponse = await axios.post('http://localhost:3000/api/job/create', {
       jobTitle: jobTitle.value.trim(),
@@ -176,8 +180,9 @@ const handleAnalyze = async () => {
       jobTitle: jobTitle.value.trim(),
       companyName: companyName.value.trim(),
       jdText: jdText.value.trim(),
+      resumeText: resumeText, // 新增：传递简历解析文本
     });
-
+    console.log('分析结果:', analysisResponse.data.data);
     if (!analysisResponse.data?.success) {
       throw new Error(analysisResponse.data?.message || '分析失败');
     }
