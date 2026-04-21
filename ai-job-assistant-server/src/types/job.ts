@@ -7,5 +7,5 @@ export interface CreateJobRequest {
 
 export interface JobResponse {
   jobId: string;
-  createdAt: Date;
+  createdAt:string | Date;
 }

@@ -46,6 +46,7 @@
       <section class="right-panel">
         <div class="card">
           <h2>分析结果</h2>
+          <p v-if="analysisId" class="analysis-id">分析ID：{{ analysisId }}</p>
 
           <div v-if="status === 'idle'" class="empty-box">
             暂无分析结果，请先填写岗位信息并点击开始分析。
@@ -90,8 +91,8 @@
 
 <script setup lang="ts">
 import axios from 'axios';
-import { computed, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { computed, onMounted, ref } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 
 type AnalyzeStatus = 'idle' | 'loading' | 'success' | 'error';
 
@@ -102,6 +103,9 @@ interface AnalysisResult {
   suggestions: string[];
 }
 
+const API_BASE_URL = 'http://localhost:3000';
+
+const route = useRoute();
 const router = useRouter();
 
 const fileInputRef = ref<HTMLInputElement | null>(null);
@@ -109,6 +113,8 @@ const jobTitle = ref('');
 const companyName = ref('');
 const jdText = ref('');
 const jobId = ref<string | null>(null);
+const resumeId = ref<string | null>(null);
+const analysisId = ref<string | null>(null);
 
 const status = ref<AnalyzeStatus>('idle');
 const errorMessage = ref('');
@@ -123,6 +129,46 @@ const scoreColorClass = computed(() => {
 
 const goToHome = () => {
   router.push('/');
+};
+
+const toStringArray = (value: unknown): string[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter((item): item is string => typeof item === 'string');
+};
+
+const loadAnalysisById = async (id: string) => {
+  status.value = 'loading';
+  errorMessage.value = '';
+
+  try {
+    const response = await axios.get(`${API_BASE_URL}/api/analysis/${id}`);
+
+    if (!response.data?.success) {
+      throw new Error(response.data?.message || '读取分析详情失败');
+    }
+
+    const detail = response.data?.data;
+    analysisId.value = detail?.analysisId ?? id;
+    jobId.value = detail?.job?.id ?? null;
+    resumeId.value = detail?.resume?.id ?? null;
+    jobTitle.value = detail?.job?.jobTitle ?? '';
+    companyName.value = detail?.job?.companyName ?? '';
+    jdText.value = detail?.job?.jdText ?? '';
+
+    result.value = {
+      score: typeof detail?.score === 'number' ? detail.score : 0,
+      strengths: toStringArray(detail?.strengths),
+      weaknesses: toStringArray(detail?.weaknesses),
+      suggestions: toStringArray(detail?.suggestions),
+    };
+    status.value = 'success';
+  } catch (error: unknown) {
+    status.value = 'error';
+    errorMessage.value = error instanceof Error ? error.message : '读取分析详情失败';
+  }
 };
 
 const handleAnalyze = async () => {
@@ -152,10 +198,13 @@ const handleAnalyze = async () => {
     if (!uploadResponse.data?.success) {
       throw new Error(uploadResponse.data?.message || '简历上传失败');
     }
-    // console.log('简历上传成功:', uploadResponse.data.text);
-    
-    // 获取解析后的简历文本
-    const resumeText = uploadResponse.data.text;
+    const uploadData = uploadResponse.data?.data;
+    resumeId.value = uploadData?.resumeId ?? null;
+    const resumeText = uploadData?.text ?? '';
+
+    if (!resumeId.value || !resumeText) {
+      throw new Error('后端未返回有效的 resumeId 或简历文本');
+    }
 
     const jobResponse = await axios.post('http://localhost:3000/api/job/create', {
       jobTitle: jobTitle.value.trim(),
@@ -174,20 +223,24 @@ const handleAnalyze = async () => {
       throw new Error('后端未返回 jobId');
     }
 
-    const analysisResponse = await axios.post('http://localhost:3000/api/analysis/run', {
+    const analysisResponse = await axios.post(`${API_BASE_URL}/api/analysis/run`, {
       jobId: jobId.value,
-      // 可选的额外参数，方便后端记录日志或做进一步分析
-      jobTitle: jobTitle.value.trim(),
-      companyName: companyName.value.trim(),
-      jdText: jdText.value.trim(),
-      resumeText: resumeText, // 新增：传递简历解析文本
+      resumeId: resumeId.value,
     });
-    console.log('分析结果:', analysisResponse.data.data);
+
     if (!analysisResponse.data?.success) {
       throw new Error(analysisResponse.data?.message || '分析失败');
     }
 
-    result.value = analysisResponse.data.data as AnalysisResult;
+    const analysisData = analysisResponse.data?.data;
+    analysisId.value = analysisData?.analysisId ?? null;
+
+    result.value = {
+      score: typeof analysisData?.score === 'number' ? analysisData.score : 0,
+      strengths: toStringArray(analysisData?.strengths),
+      weaknesses: toStringArray(analysisData?.weaknesses),
+      suggestions: toStringArray(analysisData?.suggestions),
+    };
     status.value = 'success';
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : '分析失败，请稍后重试';
@@ -205,10 +258,20 @@ const handleClear = () => {
   companyName.value = '';
   jdText.value = '';
   jobId.value = null;
+  resumeId.value = null;
+  analysisId.value = null;
   result.value = null;
   errorMessage.value = '';
   status.value = 'idle';
 };
+
+onMounted(() => {
+  const idFromQuery = route.query.analysisId;
+
+  if (typeof idFromQuery === 'string' && idFromQuery.trim()) {
+    void loadAnalysisById(idFromQuery.trim());
+  }
+});
 </script>
 
 <style scoped>
@@ -345,6 +408,12 @@ const handleClear = () => {
 
 .result-card h3 {
   margin: 0 0 8px;
+}
+
+.analysis-id {
+  margin: 8px 0 16px;
+  color: #666;
+  font-size: 13px;
 }
 
 .score-card {

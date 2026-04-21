@@ -5,6 +5,7 @@ import multer from 'multer';
 import { PDFParse } from 'pdf-parse';
 import jobRouter from './routes/job';
 import analysisRouter from './routes/analysis';
+import { prisma } from './lib/prisma';
 
 // 创建服务
 const app = express();
@@ -52,9 +53,10 @@ app.post('/api/resume/upload', upload.single('resume'), async (req: Request, res
   }
 
   const fileBuffer = req.file.buffer;
-  const fileName = req.file.originalname.toLowerCase();
+  const originalFileName = req.file.originalname;
+  const fileNameForCheck = originalFileName.toLowerCase();
 
-  if (!fileName.endsWith('.pdf')) {
+  if (!fileNameForCheck.endsWith('.pdf')) {
     return res.status(400).json({
       success: false,
       message: '文件格式错误，请上传 PDF 格式的简历',
@@ -65,15 +67,39 @@ app.post('/api/resume/upload', upload.single('resume'), async (req: Request, res
 
   try {
     const data = await parser.getText();
-    const text = data.text ?? '';
+    const text = (data.text ?? '').trim();
+
+    if (!text) {
+      return res.status(400).json({
+        success: false,
+        message: '简历解析后内容为空，请检查文件',
+      });
+    }
+
+    const resume = await prisma.resume.create({
+      data: {
+        fileName: originalFileName,
+        text,
+      },
+      select: {
+        id: true,
+        fileName: true,
+        text: true,
+        createdAt: true,
+      },
+    });
 
     console.log('解析成功，文本内容:', text);
 
     return res.json({
       success: true,
       message: '解析成功',
-      text,
-      fileName: req.file.originalname,
+      data: {
+        resumeId: resume.id,
+        fileName: resume.fileName,
+        text: resume.text,
+        createdAt: resume.createdAt,
+      },
     });
   } catch (error) {
     console.error('解析文件时出错:', error);

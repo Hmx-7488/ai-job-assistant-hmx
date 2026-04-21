@@ -1,51 +1,44 @@
 import { Router } from 'express';
-import { v4 as uuidv4 } from 'uuid'; 
+import { prisma } from '../lib/prisma';
+import type { CreateJobRequest } from '../types/job';
 
 const router = Router();
 
-// 模拟数据库存储 
-const jobStore = new Map<string, any>();
-
 router.post('/create', async (req, res) => {
   try {
-    const { jobTitle, companyName, jd } = req.body;
+    const { jobTitle, companyName, jd } = req.body as CreateJobRequest;
 
-    // 1. 基础校验
-    if (!jobTitle || !jd) {
+    if (!jobTitle?.trim() || !jd?.trim()) {
       return res.status(400).json({
         success: false,
-        message: '岗位名称和 JD 不能为空'
+        message: 'jobTitle and jd are required',
       });
     }
 
-    // 2. 生成 jobId
-    const jobId = uuidv4();
-
-    // 3. 保存岗位信息 (模拟存入数据库)
-    const newJob = {
-      jobId,
-      jobTitle,
-      companyName: companyName || '',
-      jd,
-      createdAt: new Date()
-    };
-    
-    jobStore.set(jobId, newJob);
-    console.log(`岗位已创建: ${jobId}`);
-
-    // 4. 返回结果
-    res.json({
-      success: true,
+    const job = await prisma.job.create({
       data: {
-        jobId: jobId
-      }
+        jobTitle: jobTitle.trim(),
+        companyName: companyName?.trim() || null,
+        jdText: jd.trim(),
+      },
+      select: {
+        id: true,
+        createdAt: true,
+      },
     });
 
+    return res.json({
+      success: true,
+      data: {
+        jobId: job.id,
+        createdAt: job.createdAt,
+      },
+    });
   } catch (error) {
-    console.error('创建岗位失败:', error);
-    res.status(500).json({
+    console.error('Failed to create job:', error);
+    return res.status(500).json({
       success: false,
-      message: '服务器内部错误'
+      message: 'Failed to create job',
     });
   }
 });

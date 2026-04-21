@@ -1,83 +1,194 @@
-import {Router} from 'express'
+import { Router } from 'express';
+import { prisma } from '../lib/prisma';
 import { analyzeResumeWithAI } from '../services/ai';
 import { safeParseAnalysis } from '../services/parser';
 
-const router = Router()
+const router = Router();
 
-router.post('/run', async (req, res) => { 
-  const { jobId, jobTitle, jdText, resumeText } = req.body
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
 
-  if (!jobId || !jobTitle || !jdText || !resumeText) {
+  return value.filter((item): item is string => typeof item === 'string');
+}
+
+router.post('/run', async (req, res) => {
+  const { jobId, resumeId } = req.body as {
+    jobId?: string;
+    resumeId?: string;
+  };
+
+  if (!jobId?.trim() || !resumeId?.trim()) {
     return res.status(400).json({
       success: false,
-      message: 'jobId、岗位名称、JD、简历内容不能为空'
-    })
+      message: 'jobId 和 resumeId 不能为空',
+    });
   }
 
   try {
-    // 1. 调用 AI 服务获取原始文本
+    const [job, resume] = await Promise.all([
+      prisma.job.findUnique({
+        where: { id: jobId },
+      }),
+      prisma.resume.findUnique({
+        where: { id: resumeId },
+      }),
+    ]);
+
+    if (!job) {
+      return res.status(404).json({
+        success: false,
+        message: '岗位不存在',
+      });
+    }
+
+    if (!resume) {
+      return res.status(404).json({
+        success: false,
+        message: '简历不存在',
+      });
+    }
+
     const rawResult = await analyzeResumeWithAI({
-      jobTitle,
-      jdText,
-      resumeText
+      jobTitle: job.jobTitle,
+      jdText: job.jdText,
+      resumeText: resume.text,
     });
 
-    console.log('AI Raw Result:', rawResult);
-
-    // 2. 安全解析 AI 响应为结构化数据（保证返回统一对象结构）
     const safeResult = safeParseAnalysis(rawResult);
 
-    console.log('Safe Parsed Result:', safeResult);
-
-    // 3. 返回统一格式的结构化结果
-    return res.json({
-      success: true,
-      data: safeResult
+    const analysis = await prisma.analysis.create({
+      data: {
+        jobId: job.id,
+        resumeId: resume.id,
+        score: safeResult.score,
+        strengths: safeResult.strengths,
+        weaknesses: safeResult.weaknesses,
+        suggestions: safeResult.suggestions,
+        rawResult,
+      },
+      select: {
+        id: true,
+        createdAt: true,
+      },
     });
 
+    return res.json({
+      success: true,
+      data: {
+        analysisId: analysis.id,
+        createdAt: analysis.createdAt,
+        ...safeResult,
+      },
+    });
   } catch (error) {
     console.error('Analysis failed:', error);
-    
-    // 识别错误类型，返回更具体的错误信息
+
     if (error instanceof Error) {
       const errorMessage = error.message;
-      
-      // 配置类错误（如缺少 API Key）
-      if (errorMessage.includes('DASHSCOPE_API_KEY') || 
-          errorMessage.includes('环境变量') ||
-          errorMessage.includes('配置')) {
+
+      if (
+        errorMessage.includes('DASHSCOPE_API_KEY') ||
+        errorMessage.includes('环境变量') ||
+        errorMessage.includes('配置')
+      ) {
         return res.status(500).json({
           success: false,
           message: `配置错误：${errorMessage}`,
-          errorType: 'CONFIG_ERROR'
+          errorType: 'CONFIG_ERROR',
         });
       }
-      
-      // AI 服务调用错误
-      if (errorMessage.includes('AI 分析服务异常') || 
-          errorMessage.includes('AI 服务未返回有效内容')) {
+
+      if (
+        errorMessage.includes('AI 分析服务异常') ||
+        errorMessage.includes('AI 服务未返回有效内容')
+      ) {
         return res.status(500).json({
           success: false,
           message: 'AI 服务调用失败，请稍后重试或检查网络连接',
-          errorType: 'AI_SERVICE_ERROR'
+          errorType: 'AI_SERVICE_ERROR',
         });
       }
-      
-      // 其他已知错误
+
       return res.status(500).json({
         success: false,
         message: `分析失败：${errorMessage}`,
-        errorType: 'UNKNOWN_ERROR'
+        errorType: 'UNKNOWN_ERROR',
       });
     }
-    
-    // 未知错误类型
+
     return res.status(500).json({
       success: false,
       message: 'AI 分析失败，请稍后重试',
-      errorType: 'UNKNOWN_ERROR'
+      errorType: 'UNKNOWN_ERROR',
     });
   }
-})
+});
+
+router.get('/:analysisId', async (req, res) => {
+  const { analysisId } = req.params;
+
+  if (!analysisId?.trim()) {
+    return res.status(400).json({
+      success: false,
+      message: 'analysisId 不能为空',
+    });
+  }
+
+  try {
+    const analysis = await prisma.analysis.findUnique({
+      where: {
+        id: analysisId,
+      },
+      include: {
+        job: true,
+        resume: true,
+      },
+    });
+
+    if (!analysis) {
+      return res.status(404).json({
+        success: false,
+        message: '分析记录不存在',
+      });
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        analysisId: analysis.id,
+        score: analysis.score,
+        strengths: toStringArray(analysis.strengths),
+        weaknesses: toStringArray(analysis.weaknesses),
+        suggestions: toStringArray(analysis.suggestions),
+        rawResult: analysis.rawResult,
+        createdAt: analysis.createdAt,
+        updatedAt: analysis.updatedAt,
+        job: {
+          id: analysis.job.id,
+          jobTitle: analysis.job.jobTitle,
+          companyName: analysis.job.companyName,
+          jdText: analysis.job.jdText,
+          createdAt: analysis.job.createdAt,
+          updatedAt: analysis.job.updatedAt,
+        },
+        resume: {
+          id: analysis.resume.id,
+          fileName: analysis.resume.fileName,
+          text: analysis.resume.text,
+          createdAt: analysis.resume.createdAt,
+          updatedAt: analysis.resume.updatedAt,
+        },
+      },
+    });
+  } catch (error) {
+    console.error('Failed to read analysis detail:', error);
+    return res.status(500).json({
+      success: false,
+      message: '读取分析详情失败',
+    });
+  }
+});
 
 export default router;
