@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { getAnalysisPrompts } from '../prompt';
+import { getAnalysisPrompts, getInterviewPrompts, InterviewPromptInput} from '../prompt';
 
 interface AnalyzeParams {
   jobTitle: string;
@@ -62,5 +62,41 @@ export async function analyzeResumeWithAI(params: AnalyzeParams): Promise<string
     }
 
     throw new Error('AI 分析服务异常');
+  }
+}
+
+export async function generateInterviewWithAI(params:InterviewPromptInput): Promise<string> {
+  const apiKey = validateEnvironment();
+  const { systemPrompt, userPrompt } = getInterviewPrompts(params);
+
+  try {
+    const response = await axios.post(
+      'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation',
+      {
+        model: 'qwen-turbo',
+        input: {
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+        },
+        parameters: {result_format: 'message'},
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+      }
+    );
+
+    const aiContent = response.data?.output?.choices?.[0]?.message?.content;
+    if (!aiContent) {
+      throw new Error('AI 服务未返回有效内容');
+    }
+    return aiContent;
+}  catch (error) {
+    console.error('调用 AI 服务失败(interview):', error);
+    throw new Error('AI 面试题生成服务异常');
   }
 }

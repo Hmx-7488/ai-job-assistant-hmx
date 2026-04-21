@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="analysis-page">
     <div class="top-actions">
       <button class="back-btn" @click="goToHome">返回首页</button>
@@ -86,6 +86,73 @@
         </div>
       </section>
     </div>
+
+    <section class="interview-panel">
+      <div class="card">
+        <div class="interview-head">
+          <h2>模拟面试题</h2>
+          <p>基于当前分析结果，生成项目题、基础题、场景题、行为题。</p>
+        </div>
+
+        <div class="interview-actions">
+          <label for="question-count">题目总数</label>
+          <input
+            id="question-count"
+            v-model.number="questionCount"
+            type="number"
+            min="4"
+            max="20"
+            :disabled="interviewStatus === 'loading'"
+          />
+          <button
+            class="primary-btn"
+            :disabled="interviewStatus === 'loading' || !analysisId"
+            @click="handleGenerateInterview"
+          >
+            {{ interviewStatus === 'loading' ? '生成中...' : '生成面试题' }}
+          </button>
+        </div>
+
+        <div v-if="!analysisId" class="empty-box">请先完成一次简历分析后再生成面试题。</div>
+        <div v-else-if="interviewStatus === 'idle'" class="empty-box">点击按钮开始生成分类面试题。</div>
+        <div v-else-if="interviewStatus === 'loading'" class="state loading">正在生成面试题，请稍候...</div>
+        <div v-else-if="interviewStatus === 'error'" class="state error">{{ interviewErrorMessage }}</div>
+
+        <div v-else-if="interviewResult" class="interview-result">
+          <p class="interview-summary">{{ interviewResult.summary }}</p>
+
+          <div class="question-grid">
+            <div v-for="section in interviewSections" :key="section.key" class="result-card">
+              <h3>{{ section.title }}</h3>
+
+              <div
+                v-for="(item, idx) in section.questions"
+                :key="`${section.key}-${idx}`"
+                class="question-item"
+              >
+                <p class="question-category">{{ item.category }}</p>
+                <p class="question-title">{{ idx + 1 }}. {{ item.question }}</p>
+                <p class="question-meta">难度：{{ item.difficulty }} ｜ 考察点：{{ item.intent }}</p>
+
+                <p class="question-label">参考答题点</p>
+                <ul>
+                  <li v-for="(point, pidx) in item.answerPoints" :key="`${section.key}-p-${idx}-${pidx}`">
+                    {{ point }}
+                  </li>
+                </ul>
+
+                <p class="question-label">追问建议</p>
+                <ul>
+                  <li v-for="(follow, fidx) in item.followUps" :key="`${section.key}-f-${idx}-${fidx}`">
+                    {{ follow }}
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -101,6 +168,29 @@ interface AnalysisResult {
   strengths: string[];
   weaknesses: string[];
   suggestions: string[];
+}
+
+interface InterviewQuestion {
+  category: string;
+  question: string;
+  intent: string;
+  difficulty: 'easy' | 'medium' | 'hard';
+  answerPoints: string[];
+  followUps: string[];
+}
+
+interface InterviewResult {
+  summary: string;
+  projectQuestions: InterviewQuestion[];
+  fundamentalQuestions: InterviewQuestion[];
+  scenarioQuestions: InterviewQuestion[];
+  behavioralQuestions: InterviewQuestion[];
+}
+
+interface InterviewSection {
+  key: string;
+  title: string;
+  questions: InterviewQuestion[];
 }
 
 const API_BASE_URL = 'http://localhost:3000';
@@ -120,11 +210,45 @@ const status = ref<AnalyzeStatus>('idle');
 const errorMessage = ref('');
 const result = ref<AnalysisResult | null>(null);
 
+const interviewStatus = ref<AnalyzeStatus>('idle');
+const interviewErrorMessage = ref('');
+const interviewResult = ref<InterviewResult | null>(null);
+const questionCount = ref(8);
+
 const scoreColorClass = computed(() => {
   const scoreNum = result.value?.score ?? 0;
   if (scoreNum >= 80) return 'score-high';
   if (scoreNum >= 60) return 'score-medium';
   return 'score-low';
+});
+
+const interviewSections = computed<InterviewSection[]>(() => {
+  if (!interviewResult.value) {
+    return [];
+  }
+
+  return [
+    {
+      key: 'project',
+      title: '项目题',
+      questions: interviewResult.value.projectQuestions,
+    },
+    {
+      key: 'fundamental',
+      title: '基础题',
+      questions: interviewResult.value.fundamentalQuestions,
+    },
+    {
+      key: 'scenario',
+      title: '场景题',
+      questions: interviewResult.value.scenarioQuestions,
+    },
+    {
+      key: 'behavioral',
+      title: '行为题',
+      questions: interviewResult.value.behavioralQuestions,
+    },
+  ];
 });
 
 const goToHome = () => {
@@ -139,9 +263,71 @@ const toStringArray = (value: unknown): string[] => {
   return value.filter((item): item is string => typeof item === 'string');
 };
 
+const normalizeDifficulty = (value: unknown): 'easy' | 'medium' | 'hard' => {
+  if (value === 'easy' || value === 'medium' || value === 'hard') {
+    return value;
+  }
+
+  return 'medium';
+};
+
+const normalizeInterviewQuestionList = (value: unknown, defaultCategory: string): InterviewQuestion[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item): InterviewQuestion | null => {
+      if (!item || typeof item !== 'object') {
+        return null;
+      }
+
+      const obj = item as Record<string, unknown>;
+      if (typeof obj.question !== 'string' || !obj.question.trim()) {
+        return null;
+      }
+
+      return {
+        category:
+          typeof obj.category === 'string' && obj.category.trim()
+            ? obj.category
+            : defaultCategory,
+        question: obj.question.trim(),
+        intent: typeof obj.intent === 'string' ? obj.intent : '考察综合能力',
+        difficulty: normalizeDifficulty(obj.difficulty),
+        answerPoints: toStringArray(obj.answerPoints),
+        followUps: toStringArray(obj.followUps),
+      };
+    })
+    .filter((item): item is InterviewQuestion => !!item);
+};
+
+const normalizeInterviewResult = (value: unknown): InterviewResult | null => {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const data = value as Record<string, unknown>;
+
+  return {
+    summary: typeof data.summary === 'string' ? data.summary : '面试题已生成',
+    projectQuestions: normalizeInterviewQuestionList(data.projectQuestions, '项目题'),
+    fundamentalQuestions: normalizeInterviewQuestionList(data.fundamentalQuestions, '基础题'),
+    scenarioQuestions: normalizeInterviewQuestionList(data.scenarioQuestions, '场景题'),
+    behavioralQuestions: normalizeInterviewQuestionList(data.behavioralQuestions, '行为题'),
+  };
+};
+
+const resetInterviewState = () => {
+  interviewStatus.value = 'idle';
+  interviewErrorMessage.value = '';
+  interviewResult.value = null;
+};
+
 const loadAnalysisById = async (id: string) => {
   status.value = 'loading';
   errorMessage.value = '';
+  resetInterviewState();
 
   try {
     const response = await axios.get(`${API_BASE_URL}/api/analysis/${id}`);
@@ -186,31 +372,31 @@ const handleAnalyze = async () => {
   status.value = 'loading';
   errorMessage.value = '';
   result.value = null;
+  resetInterviewState();
 
   try {
     const formData = new FormData();
     formData.append('resume', file);
 
-    const uploadResponse = await axios.post('http://localhost:3000/api/resume/upload', formData, {
+    const uploadResponse = await axios.post(`${API_BASE_URL}/api/resume/upload`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
 
     if (!uploadResponse.data?.success) {
       throw new Error(uploadResponse.data?.message || '简历上传失败');
     }
+
     const uploadData = uploadResponse.data?.data;
     resumeId.value = uploadData?.resumeId ?? null;
-    const resumeText = uploadData?.text ?? '';
 
-    if (!resumeId.value || !resumeText) {
-      throw new Error('后端未返回有效的 resumeId 或简历文本');
+    if (!resumeId.value) {
+      throw new Error('后端未返回有效的 resumeId');
     }
 
-    const jobResponse = await axios.post('http://localhost:3000/api/job/create', {
+    const jobResponse = await axios.post(`${API_BASE_URL}/api/job/create`, {
       jobTitle: jobTitle.value.trim(),
       companyName: companyName.value.trim(),
       jd: jdText.value.trim(),
-      
     });
 
     if (!jobResponse.data?.success) {
@@ -218,7 +404,6 @@ const handleAnalyze = async () => {
     }
 
     jobId.value = jobResponse.data?.data?.jobId ?? null;
-    console.log('jobId', jobId.value);
     if (!jobId.value) {
       throw new Error('后端未返回 jobId');
     }
@@ -250,10 +435,48 @@ const handleAnalyze = async () => {
   }
 };
 
+const handleGenerateInterview = async () => {
+  if (!analysisId.value) {
+    alert('请先完成分析');
+    return;
+  }
+
+  const count = Math.max(4, Math.min(20, Math.floor(Number(questionCount.value) || 8)));
+  questionCount.value = count;
+
+  interviewStatus.value = 'loading';
+  interviewErrorMessage.value = '';
+  interviewResult.value = null;
+
+  try {
+    const response = await axios.post(`${API_BASE_URL}/api/interview/generate`, {
+      analysisId: analysisId.value,
+      questionCount: count,
+    });
+
+    if (!response.data?.success) {
+      throw new Error(response.data?.message || '面试题生成失败');
+    }
+
+    const normalized = normalizeInterviewResult(response.data?.data);
+    if (!normalized) {
+      throw new Error('面试题数据格式不正确');
+    }
+
+    interviewResult.value = normalized;
+    interviewStatus.value = 'success';
+  } catch (error: unknown) {
+    interviewStatus.value = 'error';
+    interviewErrorMessage.value =
+      error instanceof Error ? error.message : '面试题生成失败，请稍后重试';
+  }
+};
+
 const handleClear = () => {
   if (fileInputRef.value) {
     fileInputRef.value.value = '';
   }
+
   jobTitle.value = '';
   companyName.value = '';
   jdText.value = '';
@@ -263,6 +486,8 @@ const handleClear = () => {
   result.value = null;
   errorMessage.value = '';
   status.value = 'idle';
+  questionCount.value = 8;
+  resetInterviewState();
 };
 
 onMounted(() => {
@@ -312,6 +537,10 @@ onMounted(() => {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 24px;
+}
+
+.interview-panel {
+  margin-top: 24px;
 }
 
 .card {
@@ -416,6 +645,86 @@ onMounted(() => {
   font-size: 13px;
 }
 
+.interview-head p {
+  margin: 4px 0 16px;
+  color: #666;
+}
+
+.interview-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.interview-actions label {
+  font-weight: 600;
+}
+
+.interview-actions input {
+  width: 92px;
+  padding: 8px 10px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+}
+
+.interview-result {
+  margin-top: 10px;
+}
+
+.interview-summary {
+  margin: 0 0 14px;
+  color: #444;
+  line-height: 1.5;
+}
+
+.question-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.question-item {
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  margin-bottom: 10px;
+}
+
+.question-item:last-child {
+  margin-bottom: 0;
+}
+
+.question-category {
+  margin: 0 0 6px;
+  display: inline-block;
+  font-size: 12px;
+  color: #2563eb;
+  background: #e8f1ff;
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+.question-title {
+  margin: 0 0 6px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.question-meta {
+  margin: 0 0 8px;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.question-label {
+  margin: 8px 0 4px;
+  font-size: 13px;
+  color: #4b5563;
+}
+
 .score-card {
   background: #f5f7fa;
 }
@@ -445,6 +754,10 @@ onMounted(() => {
 
 @media (max-width: 900px) {
   .content {
+    grid-template-columns: 1fr;
+  }
+
+  .question-grid {
     grid-template-columns: 1fr;
   }
 }

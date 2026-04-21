@@ -6,6 +6,7 @@ const router = Router();
 
 router.post('/create', async (req, res) => {
   try {
+    // 从请求体获取数据
     const { jobTitle, companyName, jd } = req.body as CreateJobRequest;
 
     if (!jobTitle?.trim() || !jd?.trim()) {

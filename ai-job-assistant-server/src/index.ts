@@ -6,6 +6,8 @@ import { PDFParse } from 'pdf-parse';
 import jobRouter from './routes/job';
 import analysisRouter from './routes/analysis';
 import { prisma } from './lib/prisma';
+import interviewRouter from './routes/interview';
+
 
 // 创建服务
 const app = express();
@@ -18,6 +20,8 @@ app.use(cors());
 app.use(express.json());
 app.use('/api/job', jobRouter);
 app.use('/api/analysis', analysisRouter);
+app.use('/api/interview', interviewRouter);
+
 
 
 app.get('/api/ping', (_req: Request, res: Response) => {
