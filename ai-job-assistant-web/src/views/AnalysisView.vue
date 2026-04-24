@@ -117,8 +117,8 @@
         <div v-else-if="interviewStatus === 'idle'" class="empty-box">点击按钮开始生成分类面试题。</div>
         <div v-else-if="interviewStatus === 'loading'" class="state loading">正在生成面试题，请稍候...</div>
         <div v-else-if="interviewStatus === 'error'" class="state error">{{ interviewErrorMessage }}</div>
-
         <div v-else-if="interviewResult" class="interview-result">
+
           <p class="interview-summary">{{ interviewResult.summary }}</p>
 
           <div class="question-grid">
@@ -151,6 +151,10 @@
             </div>
           </div>
         </div>
+        <button class="primary-btn" @click="goToChat">
+  开始模拟面试
+</button>
+
       </div>
     </section>
   </div>
@@ -490,6 +494,16 @@ const handleClear = () => {
   resetInterviewState();
 };
 
+const goToChat = () => {
+  if (!analysisId.value) return
+  router.push({
+    path: '/chat',
+    query: {
+      analysisId: analysisId.value,
+    },
+  })
+}
+
 onMounted(() => {
   const idFromQuery = route.query.analysisId;
 
@@ -605,6 +619,7 @@ onMounted(() => {
 .state {
   padding: 24px;
   border-radius: 8px;
+  margin-bottom: 10px;
 }
 
 .empty-box {

@@ -7,6 +7,7 @@ import jobRouter from './routes/job';
 import analysisRouter from './routes/analysis';
 import { prisma } from './lib/prisma';
 import interviewRouter from './routes/interview';
+import chatRouter from './routes/chat';
 
 
 // 创建服务
@@ -21,6 +22,7 @@ app.use(express.json());
 app.use('/api/job', jobRouter);
 app.use('/api/analysis', analysisRouter);
 app.use('/api/interview', interviewRouter);
+app.use('/api/chat', chatRouter);
 
 
 
