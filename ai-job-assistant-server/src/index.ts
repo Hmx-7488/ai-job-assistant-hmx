@@ -9,7 +9,6 @@ import { prisma } from './lib/prisma';
 import interviewRouter from './routes/interview';
 import chatRouter from './routes/chat';
 
-
 // 创建服务
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -17,14 +16,14 @@ const PORT = Number(process.env.PORT) || 3000;
 // 配置 multer 内存存储，用于处理上传文件
 const upload = multer({ storage: multer.memoryStorage() });
 
-app.use(cors());
+app.use(cors({
+  origin: process.env.FRONTEND_URL || '*', // 生产环境中指定具体的前端域名
+}));
 app.use(express.json());
 app.use('/api/job', jobRouter);
 app.use('/api/analysis', analysisRouter);
 app.use('/api/interview', interviewRouter);
 app.use('/api/chat', chatRouter);
-
-
 
 app.get('/api/ping', (_req: Request, res: Response) => {
   res.json({
@@ -117,6 +116,28 @@ app.post('/api/resume/upload', upload.single('resume'), async (req: Request, res
   } finally {
     await parser.destroy();
   }
+});
+
+// 添加错误处理中间件
+app.use((err: Error, req: Request, res: Response, next: any) => {
+  console.error(err.stack);
+  res.status(500).json({
+    success: false,
+    message: '服务器内部错误',
+  });
+});
+
+// Graceful shutdown
+process.on('SIGTERM', async () => {
+  console.log('收到 SIGTERM 信号，正在关闭服务器...');
+  await prisma.$disconnect();
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  console.log('收到 SIGINT 信号，正在关闭服务器...');
+  await prisma.$disconnect();
+  process.exit(0);
 });
 
 app.listen(PORT, () => {

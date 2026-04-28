@@ -118,12 +118,26 @@
         <div v-else-if="interviewStatus === 'loading'" class="state loading">正在生成面试题，请稍候...</div>
         <div v-else-if="interviewStatus === 'error'" class="state error">{{ interviewErrorMessage }}</div>
         <div v-else-if="interviewResult" class="interview-result">
-
-          <p class="interview-summary">{{ interviewResult.summary }}</p>
+          <div class="interview-toolbar">
+            <p class="interview-summary">{{ interviewResult.summary }}</p>
+            <div class="copy-actions">
+              <button class="copy-btn" type="button" @click="copyAllInterviewQuestions">
+                {{ copiedKey === 'all' ? '已复制全部面试题' : '复制全部面试题' }}
+              </button>
+            </div>
+          </div>
 
           <div class="question-grid">
             <div v-for="section in interviewSections" :key="section.key" class="result-card">
-              <h3>{{ section.title }}</h3>
+              <div class="section-header">
+                <div>
+                  <h3>{{ section.title }}</h3>
+                  <p class="section-count">共 {{ section.questions.length }} 题</p>
+                </div>
+                <button class="copy-btn secondary" type="button" @click="copySectionQuestions(section)">
+                  {{ copiedKey === section.key ? `已复制${section.title}` : `复制${section.title}` }}
+                </button>
+              </div>
 
               <div
                 v-for="(item, idx) in section.questions"
@@ -132,7 +146,7 @@
               >
                 <p class="question-category">{{ item.category }}</p>
                 <p class="question-title">{{ idx + 1 }}. {{ item.question }}</p>
-                <p class="question-meta">难度：{{ item.difficulty }} ｜ 考察点：{{ item.intent }}</p>
+                <p class="question-meta">难度：{{ formatDifficulty(item.difficulty) }} ｜ 考察点：{{ item.intent }}</p>
 
                 <p class="question-label">参考答题点</p>
                 <ul>
@@ -162,7 +176,7 @@
 
 <script setup lang="ts">
 import axios from 'axios';
-import { computed, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 type AnalyzeStatus = 'idle' | 'loading' | 'success' | 'error';
@@ -201,6 +215,9 @@ const API_BASE_URL = 'http://localhost:3000';
 
 const route = useRoute();
 const router = useRouter();
+const latestChatSessionId = ref('');
+
+const getLatestSessionStorageKey = (id: string) => `latest-chat-session:${id}`;
 
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const jobTitle = ref('');
@@ -218,6 +235,8 @@ const interviewStatus = ref<AnalyzeStatus>('idle');
 const interviewErrorMessage = ref('');
 const interviewResult = ref<InterviewResult | null>(null);
 const questionCount = ref(8);
+const copiedKey = ref<string | null>(null);
+let copyFeedbackTimer: ReturnType<typeof setTimeout> | null = null;
 
 const scoreColorClass = computed(() => {
   const scoreNum = result.value?.score ?? 0;
@@ -254,6 +273,16 @@ const interviewSections = computed<InterviewSection[]>(() => {
     },
   ];
 });
+
+const difficultyTextMap: Record<InterviewQuestion['difficulty'], string> = {
+  easy: '简单',
+  medium: '中等',
+  hard: '困难',
+};
+
+const formatDifficulty = (difficulty: InterviewQuestion['difficulty']) => {
+  return difficultyTextMap[difficulty];
+};
 
 const goToHome = () => {
   router.push('/');
@@ -326,6 +355,107 @@ const resetInterviewState = () => {
   interviewStatus.value = 'idle';
   interviewErrorMessage.value = '';
   interviewResult.value = null;
+  copiedKey.value = null;
+};
+
+const buildQuestionBlock = (section: InterviewSection) => {
+  return [
+    `${section.title}（共 ${section.questions.length} 题）`,
+    ...section.questions.map((item, idx) => {
+      const answerPoints = item.answerPoints.length
+        ? item.answerPoints.map((point) => `- ${point}`).join('\n')
+        : '- 暂无';
+      const followUps = item.followUps.length
+        ? item.followUps.map((follow) => `- ${follow}`).join('\n')
+        : '- 暂无';
+
+      return [
+        `${idx + 1}. ${item.question}`,
+        `分类：${item.category}`,
+        `难度：${difficultyTextMap[item.difficulty]}`,
+        `考察点：${item.intent}`,
+        '参考答题点：',
+        answerPoints,
+        '追问建议：',
+        followUps,
+      ].join('\n');
+    }),
+  ].join('\n\n');
+};
+
+const buildAllInterviewText = () => {
+  const sections = interviewSections.value.filter((section) => section.questions.length > 0);
+  if (!sections.length) {
+    return '';
+  }
+
+  return [
+    '分类面试题',
+    interviewResult.value?.summary ?? '',
+    ...sections.map((section) => buildQuestionBlock(section)),
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+};
+
+const copyText = async (content: string) => {
+  if (navigator.clipboard?.writeText && window.isSecureContext) {
+    await navigator.clipboard.writeText(content);
+    return;
+  }
+
+  const textarea = document.createElement('textarea');
+  textarea.value = content;
+  textarea.setAttribute('readonly', 'true');
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+
+  try {
+    document.execCommand('copy');
+  } finally {
+    document.body.removeChild(textarea);
+  }
+};
+
+const showCopyFeedback = (key: string) => {
+  copiedKey.value = key;
+
+  if (copyFeedbackTimer) {
+    clearTimeout(copyFeedbackTimer);
+  }
+
+  copyFeedbackTimer = setTimeout(() => {
+    copiedKey.value = null;
+  }, 1800);
+};
+
+const copyAllInterviewQuestions = async () => {
+  const text = buildAllInterviewText();
+  if (!text) {
+    return;
+  }
+
+  try {
+    await copyText(text);
+    showCopyFeedback('all');
+  } catch (error) {
+    console.error('Copy all interview questions failed:', error);
+  }
+};
+
+const copySectionQuestions = async (section: InterviewSection) => {
+  if (!section.questions.length) {
+    return;
+  }
+
+  try {
+    await copyText(buildQuestionBlock(section));
+    showCopyFeedback(section.key);
+  } catch (error) {
+    console.error(`Copy ${section.key} interview questions failed:`, error);
+  }
 };
 
 const loadAnalysisById = async (id: string) => {
@@ -496,19 +626,36 @@ const handleClear = () => {
 
 const goToChat = () => {
   if (!analysisId.value) return
+
+  const rememberedSessionId =
+    latestChatSessionId.value ||
+    window.localStorage.getItem(getLatestSessionStorageKey(analysisId.value)) ||
+    '';
+
   router.push({
     path: '/chat',
     query: {
       analysisId: analysisId.value,
+      sessionId: rememberedSessionId || undefined,
     },
   })
 }
 
 onMounted(() => {
   const idFromQuery = route.query.analysisId;
+  const sessionIdFromQuery = route.query.sessionId;
+
+  latestChatSessionId.value =
+    typeof sessionIdFromQuery === 'string' ? sessionIdFromQuery.trim() : '';
 
   if (typeof idFromQuery === 'string' && idFromQuery.trim()) {
     void loadAnalysisById(idFromQuery.trim());
+  }
+});
+
+onBeforeUnmount(() => {
+  if (copyFeedbackTimer) {
+    clearTimeout(copyFeedbackTimer);
   }
 });
 </script>
@@ -688,16 +835,44 @@ onMounted(() => {
   margin-top: 10px;
 }
 
+.interview-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
 .interview-summary {
-  margin: 0 0 14px;
+  margin: 0;
   color: #444;
   line-height: 1.5;
+}
+
+.copy-actions {
+  display: flex;
+  gap: 10px;
 }
 
 .question-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.section-count {
+  margin: 4px 0 0;
+  color: #6b7280;
+  font-size: 13px;
 }
 
 .question-item {
@@ -767,6 +942,22 @@ onMounted(() => {
   padding-left: 18px;
 }
 
+.copy-btn {
+  border: none;
+  border-radius: 999px;
+  padding: 8px 14px;
+  background: #409eff;
+  color: #fff;
+  cursor: pointer;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.copy-btn.secondary {
+  background: #eef4ff;
+  color: #2563eb;
+}
+
 @media (max-width: 900px) {
   .content {
     grid-template-columns: 1fr;
@@ -774,6 +965,10 @@ onMounted(() => {
 
   .question-grid {
     grid-template-columns: 1fr;
+  }
+
+  .section-header {
+    flex-direction: column;
   }
 }
 </style>
