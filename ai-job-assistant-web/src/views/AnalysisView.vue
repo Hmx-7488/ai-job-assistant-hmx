@@ -54,7 +54,10 @@
 
           <div v-else-if="status === 'loading'" class="state loading">分析中，请稍候...</div>
 
-          <div v-else-if="status === 'error'" class="state error">{{ errorMessage }}</div>
+          <div v-else-if="status === 'error'" class="state error">
+            <p>{{ errorMessage }}</p>
+            <button class="retry-btn" type="button" @click="retryAnalysis">重试</button>
+          </div>
 
           <div v-else-if="result" class="result-grid">
             <div class="result-card score-card">
@@ -116,7 +119,10 @@
         <div v-if="!analysisId" class="empty-box">请先完成一次简历分析后再生成面试题。</div>
         <div v-else-if="interviewStatus === 'idle'" class="empty-box">点击按钮开始生成分类面试题。</div>
         <div v-else-if="interviewStatus === 'loading'" class="state loading">正在生成面试题，请稍候...</div>
-        <div v-else-if="interviewStatus === 'error'" class="state error">{{ interviewErrorMessage }}</div>
+        <div v-else-if="interviewStatus === 'error'" class="state error">
+          <p>{{ interviewErrorMessage }}</p>
+          <button class="retry-btn" type="button" @click="handleGenerateInterview">重试生成</button>
+        </div>
         <div v-else-if="interviewResult" class="interview-result">
           <div class="interview-toolbar">
             <p class="interview-summary">{{ interviewResult.summary }}</p>
@@ -229,6 +235,8 @@ const analysisId = ref<string | null>(null);
 
 const status = ref<AnalyzeStatus>('idle');
 const errorMessage = ref('');
+const analysisErrorAction = ref<'load' | 'analyze' | null>(null);
+const failedAnalysisId = ref('');
 const result = ref<AnalysisResult | null>(null);
 
 const interviewStatus = ref<AnalyzeStatus>('idle');
@@ -461,6 +469,8 @@ const copySectionQuestions = async (section: InterviewSection) => {
 const loadAnalysisById = async (id: string) => {
   status.value = 'loading';
   errorMessage.value = '';
+  analysisErrorAction.value = null;
+  failedAnalysisId.value = '';
   resetInterviewState();
 
   try {
@@ -485,9 +495,13 @@ const loadAnalysisById = async (id: string) => {
       suggestions: toStringArray(detail?.suggestions),
     };
     status.value = 'success';
+    analysisErrorAction.value = null;
+    failedAnalysisId.value = '';
   } catch (error: unknown) {
     status.value = 'error';
     errorMessage.value = error instanceof Error ? error.message : '读取分析详情失败';
+    analysisErrorAction.value = 'load';
+    failedAnalysisId.value = id;
   }
 };
 
@@ -505,6 +519,8 @@ const handleAnalyze = async () => {
 
   status.value = 'loading';
   errorMessage.value = '';
+  analysisErrorAction.value = null;
+  failedAnalysisId.value = '';
   result.value = null;
   resetInterviewState();
 
@@ -561,12 +577,24 @@ const handleAnalyze = async () => {
       suggestions: toStringArray(analysisData?.suggestions),
     };
     status.value = 'success';
+    analysisErrorAction.value = null;
+    failedAnalysisId.value = '';
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : '分析失败，请稍后重试';
     status.value = 'error';
     errorMessage.value = message;
+    analysisErrorAction.value = 'analyze';
     console.error('分析流程失败:', error);
   }
+};
+
+const retryAnalysis = () => {
+  if (analysisErrorAction.value === 'load' && failedAnalysisId.value) {
+    void loadAnalysisById(failedAnalysisId.value);
+    return;
+  }
+
+  void handleAnalyze();
 };
 
 const handleGenerateInterview = async () => {
@@ -619,6 +647,8 @@ const handleClear = () => {
   analysisId.value = null;
   result.value = null;
   errorMessage.value = '';
+  analysisErrorAction.value = null;
+  failedAnalysisId.value = '';
   status.value = 'idle';
   questionCount.value = 8;
   resetInterviewState();
@@ -956,6 +986,20 @@ onBeforeUnmount(() => {
 .copy-btn.secondary {
   background: #eef4ff;
   color: #2563eb;
+}
+
+.retry-btn {
+  border: none;
+  border-radius: 6px;
+  padding: 8px 16px;
+  background: #409eff;
+  color: #fff;
+  cursor: pointer;
+}
+
+.retry-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 @media (max-width: 900px) {

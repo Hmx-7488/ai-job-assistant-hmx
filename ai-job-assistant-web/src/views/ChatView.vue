@@ -18,24 +18,47 @@
 
     <main class="chat-container">
       <section ref="messageListRef" class="message-list">
-        <div
-          v-for="message in messages"
-          :key="message.id"
-          class="message-row"
-          :class="message.role"
-        >
-          <div class="message-bubble">
-            <p class="message-text">{{ message.content }}</p>
-            <button
-              class="copy-btn"
-              type="button"
-              :aria-label="copiedMessageId === message.id ? '已复制消息' : '复制消息'"
-              @click="copyMessage(message)"
-            >
-              {{ copiedMessageId === message.id ? '已复制' : '复制' }}
-            </button>
-          </div>
+        <div v-if="initializing" class="chat-state loading">
+          正在加载聊天记录...
         </div>
+
+        <div v-else-if="chatErrorMessage" class="chat-state error">
+          <p>{{ chatErrorMessage }}</p>
+          <button
+            v-if="lastFailedAction"
+            class="retry-btn"
+            type="button"
+            :disabled="initializing || sending || clearingSession"
+            @click="retryLastAction"
+          >
+            重试
+          </button>
+        </div>
+
+        <div v-else-if="!messages.length" class="chat-state empty">
+          暂无聊天记录，请输入你的回答开始模拟面试吧！
+        </div>
+
+        <template v-else>
+          <div
+            v-for="message in messages"
+            :key="message.id"
+            class="message-row"
+            :class="message.role"
+          >
+            <div class="message-bubble">
+              <p class="message-text">{{ message.content }}</p>
+              <button
+                class="copy-btn"
+                type="button"
+                :aria-label="copiedMessageId === message.id ? '已复制消息' : '复制消息'"
+                @click="copyMessage(message)"
+              >
+                {{ copiedMessageId === message.id ? '已复制' : '复制' }}
+              </button>
+            </div>
+          </div>
+        </template>
       </section>
 
       <footer class="chat-input-bar">
@@ -43,12 +66,12 @@
           v-model="inputText"
           placeholder="请输入你的回答..."
           rows="2"
-          :disabled="sending || !analysisId"
+          :disabled="sending || initializing || !!chatErrorMessage || !analysisId || !sessionId"
           @keydown.enter.exact.prevent="handleSend"
         />
         <button
           class="send-btn"
-          :disabled="!inputText.trim() || sending || !analysisId"
+          :disabled="!inputText.trim() || sending || initializing || !!chatErrorMessage || !analysisId || !sessionId"
           @click="handleSend"
         >
           {{ sending ? '发送中...' : '发送' }}
@@ -82,6 +105,9 @@ const getLatestSessionStorageKey = (id: string) => `latest-chat-session:${id}`;
 const analysisId = ref('');
 const inputText = ref('');
 const sessionId = ref('');
+const initializing = ref(false);
+const chatErrorMessage = ref('');
+const lastFailedAction = ref<'init' | 'send' | 'clear' | null>(null);
 const sending = ref(false);
 const clearingSession = ref(false);
 const messageListRef = ref<HTMLElement | null>(null);
@@ -213,10 +239,14 @@ const handleSend = async () => {
       throw new Error(response.data?.message || '聊天失败');
     }
 
-    inputText.value = '';
     await loadSession(sessionId.value);
+    inputText.value = '';
+    chatErrorMessage.value = '';
+    lastFailedAction.value = null;
   } catch (error) {
     console.error('发送消息失败:', error);
+    chatErrorMessage.value = getErrorMessage(error, '发送消息失败，请稍后重试');
+    lastFailedAction.value = 'send';
   } finally {
     sending.value = false;
   }
@@ -251,13 +281,58 @@ const handleClearSession = async () => {
     inputText.value = '';
 
     await createSession();
+    chatErrorMessage.value = '';
+    lastFailedAction.value = null;
   } catch (error) {
     console.error('清空会话失败:', error);
+    chatErrorMessage.value = getErrorMessage(error, '清空会话失败，请稍后重试');
+    lastFailedAction.value = 'clear';
   } finally {
     clearingSession.value = false;
   }
 };
 
+const getErrorMessage = (error: unknown, fallback: string) => {
+  return error instanceof Error ? error.message : fallback;
+};
+
+const retryLastAction = async () => {
+  if (!lastFailedAction.value) {
+    return;
+  }
+
+  chatErrorMessage.value = '';
+
+  if (lastFailedAction.value === 'init') {
+    initializing.value = true;
+
+    try {
+      if (sessionId.value) {
+        await loadSession(sessionId.value);
+      } else {
+        await createSession();
+      }
+
+      lastFailedAction.value = null;
+    } catch (error) {
+      chatErrorMessage.value = getErrorMessage(error, '初始化聊天会话失败，请稍后重试');
+      lastFailedAction.value = 'init';
+    } finally {
+      initializing.value = false;
+    }
+
+    return;
+  }
+
+  if (lastFailedAction.value === 'send') {
+    await handleSend();
+    return;
+  }
+
+  if (lastFailedAction.value === 'clear') {
+    await handleClearSession();
+  }
+};
 
 const goBack = () => {
   if (analysisId.value) {
@@ -282,6 +357,8 @@ onMounted(async () => {
   sessionId.value = typeof rawSessionId === 'string' ? rawSessionId.trim() : '';
 
   if (!analysisId.value) {
+    chatErrorMessage.value = '缺少分析 ID，请先完成简历分析。';
+    lastFailedAction.value = null;
     return;
   }
 
@@ -293,16 +370,25 @@ onMounted(async () => {
     sessionId.value = rememberedSessionId;
   }
 
+  initializing.value = true;
+  chatErrorMessage.value = '';
+
   try {
     if (sessionId.value) {
       await loadSession(sessionId.value);
     } else {
       await createSession();
     }
+    lastFailedAction.value = null;
   } catch (error) {
+    chatErrorMessage.value = getErrorMessage(error, '初始化聊天会话失败，请稍后重试');
+    lastFailedAction.value = 'init';
     console.error('初始化聊天会话失败:', error);
+  } finally {
+    initializing.value = false;
   }
 });
+
 
 
 onBeforeUnmount(() => {
@@ -509,4 +595,42 @@ onBeforeUnmount(() => {
     height: 40px;
   }
 }
+.chat-state {
+  min-height: 360px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  text-align: center;
+  color: #606266;
+  line-height: 1.6;
+}
+
+.chat-state.empty {
+  color: #909399;
+}
+
+.chat-state.loading {
+  color: #409eff;
+}
+
+.chat-state.error {
+  color: #c45656;
+}
+
+.retry-btn {
+  border: none;
+  border-radius: 6px;
+  padding: 8px 16px;
+  background: #409eff;
+  color: #fff;
+  cursor: pointer;
+}
+
+.retry-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 </style>
