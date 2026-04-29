@@ -1,12 +1,15 @@
 FROM node:20-alpine
 
+# Prisma PostgreSQL 需要 openssl
+RUN apk add --no-cache openssl
+
 WORKDIR /app
 
 # 复制 package 文件
 COPY package*.json ./
 
-# 安装依赖
-RUN npm ci --only=production
+# 安装依赖（包含 prisma 用于 migrate）
+RUN npm ci
 
 # 复制源代码
 COPY . .
@@ -19,4 +22,5 @@ RUN npm run build
 
 EXPOSE $PORT
 
-CMD ["npm", "start"]
+# 启动时先运行数据库迁移，再启动服务
+CMD npx prisma migrate deploy && npm start

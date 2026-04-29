@@ -32,7 +32,7 @@ async function callDashScope(systemPrompt: string, userPrompt: string): Promise<
   const response = await axios.post(
     'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation',
     {
-      model: 'qwen-turbo',
+      model: 'xiaomimimo-v2pro',
       input: {
         messages: [
           { role: 'system', content: systemPrompt },
