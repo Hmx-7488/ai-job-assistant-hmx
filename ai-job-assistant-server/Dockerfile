@@ -15,12 +15,9 @@ RUN npm ci
 COPY . .
 
 # 构建时需要 DATABASE_URL 才能生成 Prisma 客户端（不需要真实连接）
-# Railway 会注入空的 DATABASE_URL，用 || 确保 fallback 生效
-ARG DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/placeholder"
-ENV DATABASE_URL="${DATABASE_URL:-postgresql://placeholder:placeholder@localhost:5432/placeholder}"
-
-# 生成 Prisma 客户端
-RUN npx prisma generate
+# 用 shell 判断：如果 DATABASE_URL 为空则用 placeholder
+RUN DATABASE_URL="${DATABASE_URL:-postgresql://placeholder:placeholder@localhost:5432/placeholder}" \
+    npx prisma generate
 
 # 构建项目
 RUN npm run build
