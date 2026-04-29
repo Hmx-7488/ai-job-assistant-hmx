@@ -3,8 +3,6 @@ FROM node:20-alpine
 # Prisma PostgreSQL 需要 openssl
 RUN apk add --no-cache openssl
 
-# Force rebuild: 2026-04-29
-
 WORKDIR /app
 
 # 复制 package 文件
