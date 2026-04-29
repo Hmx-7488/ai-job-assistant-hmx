@@ -3,13 +3,11 @@
 import "dotenv/config";
 import { defineConfig } from "prisma/config";
 
-const databaseUrl = process.env.DATABASE_URL || process.env.DATABASE_PRIVATE_URL || process.env.DATABASE_PUBLIC_URL;
-
-if (!databaseUrl) {
-  throw new Error(
-    'Missing database URL. Set DATABASE_URL, DATABASE_PRIVATE_URL, or DATABASE_PUBLIC_URL environment variable.'
-  );
-}
+const databaseUrl =
+  process.env.DATABASE_URL ||
+  process.env.DATABASE_PRIVATE_URL ||
+  process.env.DATABASE_PUBLIC_URL ||
+  "postgresql://localhost:5432/placeholder";
 
 export default defineConfig({
   schema: "prisma/schema.prisma",
