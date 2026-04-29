@@ -22,5 +22,5 @@ RUN npm run build
 
 EXPOSE $PORT
 
-# 启动时先运行数据库迁移，再启动服务
-CMD npx prisma migrate deploy && npm start
+# 启动时先同步数据库 schema，再启动服务
+CMD npx prisma db push --force-reset && npm start
