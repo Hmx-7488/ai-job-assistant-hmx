@@ -4,10 +4,10 @@ import "dotenv/config";
 import { defineConfig } from "prisma/config";
 
 const databaseUrl =
-  process.env.DATABASE_URL ||
-  process.env.DATABASE_PRIVATE_URL ||
-  process.env.DATABASE_PUBLIC_URL ||
-  "postgresql://localhost:5432/placeholder";
+  process.env.DATABASE_URL?.trim() ||
+  process.env.DATABASE_PRIVATE_URL?.trim() ||
+  process.env.DATABASE_PUBLIC_URL?.trim() ||
+  "postgresql://placeholder:placeholder@localhost:5432/placeholder";
 
 export default defineConfig({
   schema: "prisma/schema.prisma",
