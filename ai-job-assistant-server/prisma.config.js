@@ -1,4 +1,4 @@
-require("dotenv/config");
+try { require("dotenv/config"); } catch (_) {}
 const { defineConfig } = require("prisma/config");
 
 const databaseUrl =
