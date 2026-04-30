@@ -29,30 +29,38 @@ function validateEnvironment(): string {
 async function callAI(systemPrompt: string, userPrompt: string): Promise<string> {
   const apiKey = validateEnvironment();
   const baseUrl = process.env.MIMO_BASE_URL || 'https://token-plan-cn.xiaomimimo.com/v1';
+  const model = process.env.MIMO_MODEL || 'xiaomimimo-v2pro';
 
-  const response = await axios.post(
-    `${baseUrl}/chat/completions`,
-    {
-      model: 'xiaomimimo-v2pro',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-    },
-    {
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
+  try {
+    const response = await axios.post(
+      `${baseUrl}/chat/completions`,
+      {
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
       },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+      }
+    );
+
+    const aiContent = response.data?.choices?.[0]?.message?.content;
+    if (!aiContent || typeof aiContent !== 'string' || !aiContent.trim()) {
+      throw new Error('AI service returned empty content');
     }
-  );
 
-  const aiContent = response.data?.choices?.[0]?.message?.content;
-  if (!aiContent || typeof aiContent !== 'string' || !aiContent.trim()) {
-    throw new Error('AI service returned empty content');
+    return aiContent.trim();
+  } catch (error: any) {
+    if (error.response) {
+      console.error('MiMo API error:', error.response.status, JSON.stringify(error.response.data));
+    }
+    throw error;
   }
-
-  return aiContent.trim();
 }
 
 export async function analyzeResumeWithAI(params: AnalyzeParams): Promise<string> {
