@@ -29,7 +29,7 @@ function validateEnvironment(): string {
 async function callAI(systemPrompt: string, userPrompt: string): Promise<string> {
   const apiKey = validateEnvironment();
   const baseUrl = process.env.MIMO_BASE_URL || 'https://token-plan-cn.xiaomimimo.com/v1';
-  const model = process.env.MIMO_MODEL || 'xiaomimimo-v2pro';
+  const model = process.env.MIMO_MODEL || 'mimo-v2-pro';
 
   try {
     const response = await axios.post(
@@ -57,7 +57,8 @@ async function callAI(systemPrompt: string, userPrompt: string): Promise<string>
     return aiContent.trim();
   } catch (error: any) {
     if (error.response) {
-      console.error('MiMo API error:', error.response.status, JSON.stringify(error.response.data));
+      console.error('MiMo API error:', error.response.status);
+      console.error('Response data:', JSON.stringify(error.response.data, null, 2));
     }
     throw error;
   }
