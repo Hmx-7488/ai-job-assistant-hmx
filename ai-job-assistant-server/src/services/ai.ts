@@ -14,34 +14,30 @@ interface AnalyzeParams {
 }
 
 function validateEnvironment(): string {
-  const apiKey = process.env.DASHSCOPE_API_KEY;
+  const apiKey = process.env.MIMO_API_KEY;
 
   if (!apiKey || apiKey.trim() === '') {
     throw new Error(
-      'Missing required environment variable DASHSCOPE_API_KEY.\n' +
-        'Please set DASHSCOPE_API_KEY=your_api_key_here in .env'
+      'Missing required environment variable MIMO_API_KEY.\n' +
+        'Please set MIMO_API_KEY=your_api_key_here in .env'
     );
   }
 
   return apiKey;
 }
 
-async function callDashScope(systemPrompt: string, userPrompt: string): Promise<string> {
+async function callAI(systemPrompt: string, userPrompt: string): Promise<string> {
   const apiKey = validateEnvironment();
+  const baseUrl = process.env.MIMO_BASE_URL || 'https://token-plan-cn.xiaomimimo.com/v1';
 
   const response = await axios.post(
-    'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation',
+    `${baseUrl}/chat/completions`,
     {
       model: 'xiaomimimo-v2pro',
-      input: {
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-      },
-      parameters: {
-        result_format: 'message',
-      },
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
     },
     {
       headers: {
@@ -51,7 +47,7 @@ async function callDashScope(systemPrompt: string, userPrompt: string): Promise<
     }
   );
 
-  const aiContent = response.data?.output?.choices?.[0]?.message?.content;
+  const aiContent = response.data?.choices?.[0]?.message?.content;
   if (!aiContent || typeof aiContent !== 'string' || !aiContent.trim()) {
     throw new Error('AI service returned empty content');
   }
@@ -64,11 +60,11 @@ export async function analyzeResumeWithAI(params: AnalyzeParams): Promise<string
   const { systemPrompt, userPrompt } = getAnalysisPrompts(jobTitle, jdText, resumeText);
 
   try {
-    return await callDashScope(systemPrompt, userPrompt);
+    return await callAI(systemPrompt, userPrompt);
   } catch (error) {
     console.error('Failed to call AI analysis service:', error);
 
-    if (error instanceof Error && error.message.includes('DASHSCOPE_API_KEY')) {
+    if (error instanceof Error && error.message.includes('MIMO_API_KEY')) {
       throw error;
     }
 
@@ -80,11 +76,11 @@ export async function generateInterviewWithAI(params: InterviewPromptInput): Pro
   const { systemPrompt, userPrompt } = getInterviewPrompts(params);
 
   try {
-    return await callDashScope(systemPrompt, userPrompt);
+    return await callAI(systemPrompt, userPrompt);
   } catch (error) {
     console.error('Failed to call AI interview service:', error);
 
-    if (error instanceof Error && error.message.includes('DASHSCOPE_API_KEY')) {
+    if (error instanceof Error && error.message.includes('MIMO_API_KEY')) {
       throw error;
     }
 
@@ -96,11 +92,11 @@ export async function sendChatWithAI(params: ChatPromptInput): Promise<string> {
   const { systemPrompt, userPrompt } = getChatPrompts(params);
 
   try {
-    return await callDashScope(systemPrompt, userPrompt);
+    return await callAI(systemPrompt, userPrompt);
   } catch (error) {
     console.error('Failed to call AI chat service:', error);
 
-    if (error instanceof Error && error.message.includes('DASHSCOPE_API_KEY')) {
+    if (error instanceof Error && error.message.includes('MIMO_API_KEY')) {
       throw error;
     }
 
