@@ -13,23 +13,41 @@ interface AnalyzeParams {
   resumeText: string;
 }
 
-function validateEnvironment(): string {
-  const apiKey = process.env.MIMO_API_KEY;
+interface AIConfig {
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+}
 
-  if (!apiKey || apiKey.trim() === '') {
+function getAIConfig(): AIConfig {
+  const mimoApiKey = process.env.MIMO_API_KEY?.trim();
+  const dashscopeApiKey = process.env.DASHSCOPE_API_KEY?.trim();
+  const apiKey = mimoApiKey || dashscopeApiKey;
+
+  if (!apiKey) {
     throw new Error(
-      'Missing required environment variable MIMO_API_KEY.\n' +
-        'Please set MIMO_API_KEY=your_api_key_here in .env'
+      'Missing required environment variable DASHSCOPE_API_KEY or MIMO_API_KEY.\n' +
+        'Please set DASHSCOPE_API_KEY=your_api_key_here in .env'
     );
   }
 
-  return apiKey;
+  if (mimoApiKey) {
+    return {
+      apiKey,
+      baseUrl: process.env.MIMO_BASE_URL || 'https://token-plan-cn.xiaomimimo.com/v1',
+      model: process.env.MIMO_MODEL || 'mimo-v2-pro',
+    };
+  }
+
+  return {
+    apiKey,
+    baseUrl: process.env.DASHSCOPE_BASE_URL || 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    model: process.env.DASHSCOPE_MODEL || 'qwen-plus',
+  };
 }
 
 async function callAI(systemPrompt: string, userPrompt: string): Promise<string> {
-  const apiKey = validateEnvironment();
-  const baseUrl = process.env.MIMO_BASE_URL || 'https://token-plan-cn.xiaomimimo.com/v1';
-  const model = process.env.MIMO_MODEL || 'mimo-v2-pro';
+  const { apiKey, baseUrl, model } = getAIConfig();
 
   try {
     const response = await axios.post(
@@ -57,7 +75,7 @@ async function callAI(systemPrompt: string, userPrompt: string): Promise<string>
     return aiContent.trim();
   } catch (error: any) {
     if (error.response) {
-      console.error('MiMo API error:', error.response.status);
+      console.error('AI API error:', error.response.status);
       console.error('Response data:', JSON.stringify(error.response.data, null, 2));
     }
     throw error;
@@ -73,7 +91,10 @@ export async function analyzeResumeWithAI(params: AnalyzeParams): Promise<string
   } catch (error) {
     console.error('Failed to call AI analysis service:', error);
 
-    if (error instanceof Error && error.message.includes('MIMO_API_KEY')) {
+    if (
+      error instanceof Error &&
+      (error.message.includes('DASHSCOPE_API_KEY') || error.message.includes('MIMO_API_KEY'))
+    ) {
       throw error;
     }
 
@@ -89,7 +110,10 @@ export async function generateInterviewWithAI(params: InterviewPromptInput): Pro
   } catch (error) {
     console.error('Failed to call AI interview service:', error);
 
-    if (error instanceof Error && error.message.includes('MIMO_API_KEY')) {
+    if (
+      error instanceof Error &&
+      (error.message.includes('DASHSCOPE_API_KEY') || error.message.includes('MIMO_API_KEY'))
+    ) {
       throw error;
     }
 
@@ -105,7 +129,10 @@ export async function sendChatWithAI(params: ChatPromptInput): Promise<string> {
   } catch (error) {
     console.error('Failed to call AI chat service:', error);
 
-    if (error instanceof Error && error.message.includes('MIMO_API_KEY')) {
+    if (
+      error instanceof Error &&
+      (error.message.includes('DASHSCOPE_API_KEY') || error.message.includes('MIMO_API_KEY'))
+    ) {
       throw error;
     }
 

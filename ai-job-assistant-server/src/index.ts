@@ -1,6 +1,8 @@
 import 'dotenv/config';
 import cors from 'cors';
 import express, { Request, Response } from 'express';
+import { createRequire } from 'module';
+import { pathToFileURL } from 'url';
 import multer from 'multer';
 import { PDFParse } from 'pdf-parse';
 import jobRouter from './routes/job';
@@ -8,6 +10,9 @@ import analysisRouter from './routes/analysis';
 import { prisma } from './lib/prisma';
 import interviewRouter from './routes/interview';
 import chatRouter from './routes/chat';
+
+const nodeRequire = createRequire(__filename);
+PDFParse.setWorker(pathToFileURL(nodeRequire.resolve('pdfjs-dist/legacy/build/pdf.worker.mjs')).href);
 
 // 创建服务
 const app = express();
