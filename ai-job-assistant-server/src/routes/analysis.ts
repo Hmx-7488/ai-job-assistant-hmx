@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { analyzeResumeWithAI } from '../services/ai';
 import { safeParseAnalysis } from '../services/parser';
+import { analyzeResumeWithLangChain } from '../services/langchainAnalysis';
 
 const router = Router();
 
@@ -50,13 +51,27 @@ router.post('/run', async (req, res) => {
       });
     }
 
-    const rawResult = await analyzeResumeWithAI({
-      jobTitle: job.jobTitle,
-      jdText: job.jdText,
-      resumeText: resume.text,
-    });
+    let rawResult = '';
+    let safeResult: ReturnType<typeof safeParseAnalysis>;
+    try {
+      safeResult = await analyzeResumeWithLangChain({
+        jobTitle: job.jobTitle,
+        jdText: job.jdText,
+        resumeText: resume.text,
+      });
 
-    const safeResult = safeParseAnalysis(rawResult);
+      rawResult = JSON.stringify(safeResult);
+    } catch (langChainError) {
+      console.error('LangChain analysis failed, fallback to legacy AI:', langChainError);
+
+      rawResult = await analyzeResumeWithAI({
+        jobTitle: job.jobTitle,
+        jdText: job.jdText,
+        resumeText: resume.text,
+      });
+
+      safeResult = safeParseAnalysis(rawResult);
+    }
 
     const analysis = await prisma.analysis.create({
       data: {
