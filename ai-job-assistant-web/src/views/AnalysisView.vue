@@ -569,6 +569,9 @@ const handleAnalyze = async () => {
 
     const analysisData = analysisResponse.data?.data;
     analysisId.value = analysisData?.analysisId ?? null;
+    if (!analysisId.value) {
+      throw new Error('后端未返回 analysisId');
+    }
 
     result.value = {
       score: typeof analysisData?.score === 'number' ? analysisData.score : 0,
@@ -579,6 +582,13 @@ const handleAnalyze = async () => {
     status.value = 'success';
     analysisErrorAction.value = null;
     failedAnalysisId.value = '';
+
+    await router.replace({
+      path: '/analysis',
+      query: {
+        analysisId: analysisId.value,
+      },
+    });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : '分析失败，请稍后重试';
     status.value = 'error';
@@ -652,6 +662,7 @@ const handleClear = () => {
   status.value = 'idle';
   questionCount.value = 8;
   resetInterviewState();
+  void router.replace('/analysis');
 };
 
 const goToChat = () => {

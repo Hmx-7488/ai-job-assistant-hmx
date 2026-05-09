@@ -27,5 +27,10 @@ export async function runResumeAnalysisChain(
       resumeText: input.resumeText,
     }
   )
-  return validateResumeAnalysisResult(parsedResult);
+  try {
+    return validateResumeAnalysisResult(parsedResult);
+  } catch (error) {
+    console.error('Invalid LangChain analysis result:', parsedResult);
+    throw error;
+  }
 }

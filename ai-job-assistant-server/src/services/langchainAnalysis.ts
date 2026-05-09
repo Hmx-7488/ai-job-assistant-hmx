@@ -8,10 +8,15 @@ export interface LangChainAnalyzeParams {
 
 export async function analyzeResumeWithLangChain(
   params: LangChainAnalyzeParams
-) {
-  return runResumeAnalysisChain({
-    jobTitle: params.jobTitle,
-    jdText: params.jdText,
-    resumeText: params.resumeText,
-  });
+){
+  try {
+    return await runResumeAnalysisChain({
+      jobTitle: params.jobTitle,
+      jdText: params.jdText,
+      resumeText: params.resumeText,
+    });
+  } catch (error) {
+    console.error('LangChain analysis failed:', error);
+    throw error;
+  }
 }
