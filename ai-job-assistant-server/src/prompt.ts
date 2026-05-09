@@ -38,6 +38,7 @@ export interface InterviewPromptInput {
   weaknesses: string[];
   suggestions: string[];
   questionCount: number;
+  retrievedKnowledge?: string;
 }
 
 export function getInterviewPrompts(input: InterviewPromptInput) {
@@ -87,6 +88,9 @@ ${input.jdText}
 
 简历内容:
 ${input.resumeText}
+
+补充知识库检索结果:
+${input.retrievedKnowledge || '暂无补充知识'}
 
 分析结果:
 score: ${input.score}

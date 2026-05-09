@@ -3,6 +3,10 @@ import { prisma } from '../lib/prisma';
 import { generateInterviewWithAI } from '../services/ai';
 import { safeParseInterview } from '../services/interviewParser';
 import type { InterviewGenerateRequest } from '../types/interview';
+import {
+  formatRetrievedKnowledge,
+  retrieveKnowledge,
+} from '../rag/retriever';
 
 const router = Router();
 
@@ -40,6 +44,18 @@ router.post('/generate', async (req, res) => {
     const weaknesses = toStringArray(analysis.weaknesses);
     const suggestions = toStringArray(analysis.suggestions);
 
+    const retrievalQuery = [
+      analysis.job.jobTitle,
+      analysis.job.jdText,
+      ...toStringArray(analysis.strengths),
+      ...toStringArray(analysis.weaknesses),
+      ...toStringArray(analysis.suggestions),
+    ].join('\n');
+
+    const retrievedKnowledge = formatRetrievedKnowledge(
+      retrieveKnowledge(retrievalQuery, 4)
+    );
+
     // 调用 AI 服务生成面试题
     const raw = await generateInterviewWithAI({
       jobTitle: analysis.job.jobTitle,
@@ -51,6 +67,7 @@ router.post('/generate', async (req, res) => {
       weaknesses,
       suggestions,
       questionCount: count,
+      retrievedKnowledge,
     });
 
     // 解析 AI 返回的结果
