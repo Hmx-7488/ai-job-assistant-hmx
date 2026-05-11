@@ -1,5 +1,8 @@
 import { interviewKnowledgeBase } from './interviewKnowledgeBase';
 
+// 检索测试
+// npx ts-node src/rag/demoRetriever.ts
+
 export interface RetrievedKnowledge {
   id: string;
   title: string;
