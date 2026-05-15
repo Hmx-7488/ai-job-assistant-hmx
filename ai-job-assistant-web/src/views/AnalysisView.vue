@@ -204,6 +204,10 @@ interface InterviewQuestion {
 }
 
 interface InterviewResult {
+  interviewQuestionSetId?: string;
+  questionCount?: number;
+  createdAt?: string;
+  updatedAt?: string;
   summary: string;
   projectQuestions: InterviewQuestion[];
   fundamentalQuestions: InterviewQuestion[];
@@ -351,6 +355,11 @@ const normalizeInterviewResult = (value: unknown): InterviewResult | null => {
   const data = value as Record<string, unknown>;
 
   return {
+    interviewQuestionSetId:
+      typeof data.interviewQuestionSetId === 'string' ? data.interviewQuestionSetId : undefined,
+    questionCount: typeof data.questionCount === 'number' ? data.questionCount : undefined,
+    createdAt: typeof data.createdAt === 'string' ? data.createdAt : undefined,
+    updatedAt: typeof data.updatedAt === 'string' ? data.updatedAt : undefined,
     summary: typeof data.summary === 'string' ? data.summary : '面试题已生成',
     projectQuestions: normalizeInterviewQuestionList(data.projectQuestions, '项目题'),
     fundamentalQuestions: normalizeInterviewQuestionList(data.fundamentalQuestions, '基础题'),
@@ -364,6 +373,41 @@ const resetInterviewState = () => {
   interviewErrorMessage.value = '';
   interviewResult.value = null;
   copiedKey.value = null;
+};
+
+const loadLatestInterviewByAnalysisId = async (id: string) => {
+  interviewStatus.value = 'loading';
+  interviewErrorMessage.value = '';
+  interviewResult.value = null;
+
+  try {
+    const response = await axios.get(`${API_BASE_URL}/api/interview/latest`, {
+      params: { analysisId: id },
+    });
+
+    if (!response.data?.success) {
+      throw new Error(response.data?.message || '读取面试题失败');
+    }
+
+    const normalized = normalizeInterviewResult(response.data?.data);
+    if (!normalized) {
+      throw new Error('面试题数据格式不正确');
+    }
+
+    interviewResult.value = normalized;
+    questionCount.value = normalized.questionCount ?? questionCount.value;
+    interviewStatus.value = 'success';
+  } catch (error: unknown) {
+    if (axios.isAxiosError(error) && error.response?.status === 404) {
+      interviewStatus.value = 'idle';
+      interviewErrorMessage.value = '';
+      return;
+    }
+
+    interviewStatus.value = 'error';
+    interviewErrorMessage.value =
+      error instanceof Error ? error.message : '读取面试题失败，请稍后重试';
+  }
 };
 
 const buildQuestionBlock = (section: InterviewSection) => {
@@ -497,6 +541,10 @@ const loadAnalysisById = async (id: string) => {
     status.value = 'success';
     analysisErrorAction.value = null;
     failedAnalysisId.value = '';
+
+    if (analysisId.value) {
+      await loadLatestInterviewByAnalysisId(analysisId.value);
+    }
   } catch (error: unknown) {
     status.value = 'error';
     errorMessage.value = error instanceof Error ? error.message : '读取分析详情失败';
