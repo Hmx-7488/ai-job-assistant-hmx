@@ -9,6 +9,45 @@
       <p>填写岗位信息后，点击开始分析获取匹配结果。</p>
     </header>
 
+    <section class="history-panel">
+      <div class="card">
+        <div class="history-header">
+          <div>
+            <h2>历史分析</h2>
+            <p>选择一条历史记录，恢复分析结果、面试题和聊天入口。</p>
+          </div>
+          <button class="copy-btn secondary" type="button" @click="loadAnalysisHistory">
+            刷新历史
+          </button>
+        </div>
+
+        <div v-if="historyStatus === 'loading'" class="state loading">正在读取历史分析...</div>
+        <div v-else-if="historyStatus === 'error'" class="state error">
+          <p>{{ historyErrorMessage }}</p>
+          <button class="retry-btn" type="button" @click="loadAnalysisHistory">重试</button>
+        </div>
+        <div v-else-if="analysisHistory.length === 0" class="empty-box">暂无历史分析记录。</div>
+        <div v-else class="history-list">
+          <button
+            v-for="item in analysisHistory"
+            :key="item.analysisId"
+            class="history-item"
+            :class="{ active: item.analysisId === analysisId }"
+            type="button"
+            @click="openHistoryAnalysis(item.analysisId)"
+          >
+            <span class="history-title">{{ item.job.jobTitle }}</span>
+            <span class="history-meta">
+              {{ item.job.companyName || '未填写公司' }} ｜ 简历记录 ｜ {{ item.score }}/100
+            </span>
+            <span class="history-meta">
+              {{ formatDateTime(item.createdAt) }} ｜ 面试题 {{ item.counts.interviewQuestionSets }} 次 ｜ 聊天 {{ item.counts.chatSessions }} 个
+            </span>
+          </button>
+        </div>
+      </div>
+    </section>
+
     <div class="content">
       <section class="left-panel">
         <div class="card">
@@ -194,6 +233,26 @@ interface AnalysisResult {
   suggestions: string[];
 }
 
+interface AnalysisHistoryItem {
+  analysisId: string;
+  score: number;
+  createdAt: string;
+  updatedAt: string;
+  job: {
+    id: string;
+    jobTitle: string;
+    companyName?: string | null;
+  };
+  resume: {
+    id: string;
+    fileName: string;
+  };
+  counts: {
+    interviewQuestionSets: number;
+    chatSessions: number;
+  };
+}
+
 interface InterviewQuestion {
   category: string;
   question: string;
@@ -242,6 +301,10 @@ const errorMessage = ref('');
 const analysisErrorAction = ref<'load' | 'analyze' | null>(null);
 const failedAnalysisId = ref('');
 const result = ref<AnalysisResult | null>(null);
+
+const historyStatus = ref<AnalyzeStatus>('idle');
+const historyErrorMessage = ref('');
+const analysisHistory = ref<AnalysisHistoryItem[]>([]);
 
 const interviewStatus = ref<AnalyzeStatus>('idle');
 const interviewErrorMessage = ref('');
@@ -294,6 +357,20 @@ const difficultyTextMap: Record<InterviewQuestion['difficulty'], string> = {
 
 const formatDifficulty = (difficulty: InterviewQuestion['difficulty']) => {
   return difficultyTextMap[difficulty];
+};
+
+const formatDateTime = (value: string) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '未知时间';
+  }
+
+  return date.toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 };
 
 const goToHome = () => {
@@ -373,6 +450,90 @@ const resetInterviewState = () => {
   interviewErrorMessage.value = '';
   interviewResult.value = null;
   copiedKey.value = null;
+};
+
+const normalizeAnalysisHistory = (value: unknown): AnalysisHistoryItem[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item): AnalysisHistoryItem | null => {
+      if (!item || typeof item !== 'object') {
+        return null;
+      }
+
+      const data = item as Record<string, unknown>;
+      const job = data.job as Record<string, unknown> | undefined;
+      const resume = data.resume as Record<string, unknown> | undefined;
+      const counts = data.counts as Record<string, unknown> | undefined;
+
+      if (
+        typeof data.analysisId !== 'string' ||
+        typeof data.score !== 'number' ||
+        typeof data.createdAt !== 'string' ||
+        typeof data.updatedAt !== 'string' ||
+        !job ||
+        typeof job.id !== 'string' ||
+        typeof job.jobTitle !== 'string' ||
+        !resume ||
+        typeof resume.id !== 'string' ||
+        typeof resume.fileName !== 'string'
+      ) {
+        return null;
+      }
+
+      return {
+        analysisId: data.analysisId,
+        score: data.score,
+        createdAt: data.createdAt,
+        updatedAt: data.updatedAt,
+        job: {
+          id: job.id,
+          jobTitle: job.jobTitle,
+          companyName: typeof job.companyName === 'string' ? job.companyName : null,
+        },
+        resume: {
+          id: resume.id,
+          fileName: resume.fileName,
+        },
+        counts: {
+          interviewQuestionSets:
+            typeof counts?.interviewQuestionSets === 'number' ? counts.interviewQuestionSets : 0,
+          chatSessions: typeof counts?.chatSessions === 'number' ? counts.chatSessions : 0,
+        },
+      };
+    })
+    .filter((item): item is AnalysisHistoryItem => !!item);
+};
+
+const loadAnalysisHistory = async () => {
+  historyStatus.value = 'loading';
+  historyErrorMessage.value = '';
+
+  try {
+    const response = await axios.get(`${API_BASE_URL}/api/analysis/list`);
+    if (!response.data?.success) {
+      throw new Error(response.data?.message || '读取历史分析失败');
+    }
+
+    analysisHistory.value = normalizeAnalysisHistory(response.data?.data);
+    historyStatus.value = 'success';
+  } catch (error: unknown) {
+    historyStatus.value = 'error';
+    historyErrorMessage.value =
+      error instanceof Error ? error.message : '读取历史分析失败，请稍后重试';
+  }
+};
+
+const openHistoryAnalysis = async (id: string) => {
+  await router.replace({
+    path: '/analysis',
+    query: {
+      analysisId: id,
+    },
+  });
+  await loadAnalysisById(id);
 };
 
 const loadLatestInterviewByAnalysisId = async (id: string) => {
@@ -637,6 +798,7 @@ const handleAnalyze = async () => {
         analysisId: analysisId.value,
       },
     });
+    void loadAnalysisHistory();
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : '分析失败，请稍后重试';
     status.value = 'error';
@@ -731,6 +893,8 @@ const goToChat = () => {
 }
 
 onMounted(() => {
+  void loadAnalysisHistory();
+
   const idFromQuery = route.query.analysisId;
   const sessionIdFromQuery = route.query.sessionId;
 
@@ -787,6 +951,62 @@ onBeforeUnmount(() => {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 24px;
+}
+
+.history-panel {
+  margin-bottom: 24px;
+}
+
+.history-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.history-header h2 {
+  margin: 0 0 6px;
+}
+
+.history-header p {
+  margin: 0;
+  color: #666;
+}
+
+.history-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.history-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.history-item:hover,
+.history-item.active {
+  border-color: #409eff;
+  background: #f4f9ff;
+}
+
+.history-title {
+  color: #1f2937;
+  font-weight: 700;
+}
+
+.history-meta {
+  color: #6b7280;
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 .interview-panel {
@@ -1062,7 +1282,8 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 900px) {
-  .content {
+  .content,
+  .history-list {
     grid-template-columns: 1fr;
   }
 

@@ -141,6 +141,61 @@ router.post('/run', async (req, res) => {
   }
 });
 
+router.get('/list', async (_req, res) => {
+  try {
+    const analyses = await prisma.analysis.findMany({
+      orderBy: {
+        createdAt: 'desc',
+      },
+      take: 20,
+      include: {
+        job: true,
+        resume: {
+          select: {
+            id: true,
+            fileName: true,
+          },
+        },
+        _count: {
+          select: {
+            chatSessions: true,
+            interviewQuestionSets: true,
+          },
+        },
+      },
+    });
+
+    return res.json({
+      success: true,
+      data: analyses.map((analysis) => ({
+        analysisId: analysis.id,
+        score: analysis.score,
+        createdAt: analysis.createdAt,
+        updatedAt: analysis.updatedAt,
+        job: {
+          id: analysis.job.id,
+          jobTitle: analysis.job.jobTitle,
+          companyName: analysis.job.companyName,
+        },
+        resume: {
+          id: analysis.resume.id,
+          fileName: analysis.resume.fileName,
+        },
+        counts: {
+          interviewQuestionSets: analysis._count.interviewQuestionSets,
+          chatSessions: analysis._count.chatSessions,
+        },
+      })),
+    });
+  } catch (error) {
+    console.error('Failed to list analyses:', error);
+    return res.status(500).json({
+      success: false,
+      message: '读取历史分析失败',
+    });
+  }
+});
+
 router.get('/:analysisId', async (req, res) => {
   const { analysisId } = req.params;
 
